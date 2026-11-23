@@ -15,7 +15,13 @@ torch.set_num_threads(os.cpu_count())
 PROMPT = "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 tok = AutoTokenizer.from_pretrained(base)
 model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.float32)
-model = get_peft_model(model, LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05, target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], task_type="CAUSAL_LM"))
+RESUME = os.environ.get("RESUME")
+LR = float(os.environ.get("LR", LR))
+if RESUME:
+    from peft import PeftModel
+    model = PeftModel.from_pretrained(model, RESUME, is_trainable=True)
+else:
+  model = get_peft_model(model, LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05, target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], task_type="CAUSAL_LM"))
 model.config.use_cache = False
 model.print_trainable_parameters()
 

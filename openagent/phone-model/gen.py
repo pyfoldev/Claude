@@ -5,7 +5,7 @@ import lang
 from lang import num, plural, duration_forms, alarm_forms, maybe_words
 import sim
 
-R = random.Random(2026)
+R = random.Random(int(os.environ.get('SEED', '2026')))
 pick = R.choice
 
 # ---------------- справочники ----------------
@@ -397,6 +397,24 @@ def norm(t):
     return re.sub(r"[^\w\s]", "", t.lower().replace("ё", "е")).strip()
 
 
+def focus_sample():
+    """Слабые места: арифметика времени, длительности, точка доступа, фонарь, две команды с разными глаголами."""
+    r = R.random()
+    if r < 0.40:
+        t, a = g_alarm()
+    elif r < 0.65:
+        t, a = g_timer()
+    elif r < 0.75:
+        t, a = g_toggle()
+    elif r < 0.85:
+        t, a = g_flash()
+    else:
+        g1, g2 = R.choice(SINGLE_SIMPLE), R.choice(SINGLE_SIMPLE)
+        t1, a1 = g1(); t2, a2 = g2()
+        t, a = t1 + pick([" и ", ", потом ", " а ещё "]) + t2[0].lower() + t2[1:], a1 + a2
+    return noisy(pick(PRE) + t + pick(POST)), a
+
+
 if __name__ == "__main__":
     import handwritten
     HOLD = {norm(t) for t, _, _ in handwritten.HAND}   # ручные фразы никогда не попадают в обучение
@@ -411,6 +429,18 @@ if __name__ == "__main__":
         if err:
             bad += 1; continue
         seen.add(text); rows.append(to_row(text, actions))
+    if os.environ.get("FOCUS"):
+        rows = []
+        while len(rows) < int(os.environ["FOCUS"]):
+            text, actions = focus_sample()
+            if text in seen or norm(text) in HOLD or sim.run(actions)[1]:
+                continue
+            seen.add(text); rows.append(to_row(text, actions))
+        R.shuffle(rows)
+        with open(f"{out}/focus.jsonl", "w", encoding="utf8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        print("focus", len(rows)); sys.exit(0)
     R.shuffle(rows)
     val, train = rows[:1200], rows[1200:]
     for name, data in (("train", train), ("val", val)):
