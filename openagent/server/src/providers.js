@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { db, now } from './db.js';
 import { riverProv } from './llm.js';
 import { bridgeHas, bridgeFetch } from './bridge.js';
+import { kieFetcher, kieModels } from './kie.js';
 import { pplxUp, pplxFetch, PPLX_MODELS } from './perplexity.js';
 export const groqUp = (user) => !!user && (bridgeHas(user.id, 'api.groq.com') || !!process.env.GROQ_API_KEY);
 
@@ -29,6 +30,17 @@ export function localUp() {
   }
   return _localUp;
 }
+// Puter (puter.js): OpenAI-совместимый шлюз к десяткам моделей (GPT, Claude, Gemini, Llama, Mistral…). Ключ — токен Puter (puter.com → Dashboard → API token), PUTER_AUTH_TOKEN.
+const PUTER = { id: 'puter', name: 'Puter', baseUrl: 'https://api.puter.com/puterai/openai/v1' };
+const putersModels = () => (process.env.PUTER_MODELS || 'gpt-5-nano,gpt-5-mini,claude-sonnet-4-5,claude-haiku-4-5,gemini-2.5-flash,deepseek-chat').split(',').map((x) => x.trim()).filter(Boolean);
+// Простые OpenAI-совместимые провайдеры: ключ в .env → провайдер появляется у всех без ввода ключа в приложении.
+const SIMPLE = [
+  { id: 'dahl', name: 'Dahl Inference', baseUrl: 'https://inference.dahl.global/v1', env: 'DAHL_API_KEY', models: 'DAHL_MODELS', dflt: 'deepseek-ai/DeepSeek-V4-Flash-0731,zai-org/GLM-5.3-Flash,MiniMaxAI/MiniMax-M2.7' },
+  { id: 'cohere', name: 'Cohere', baseUrl: 'https://api.cohere.ai/compatibility/v1', env: 'COHERE_API_KEY', models: 'COHERE_MODELS', dflt: 'command-a-03-2025,command-r-plus-08-2024,command-r7b-12-2024' },
+  { id: 'vyce', name: 'Vyce AI', baseUrl: 'https://vyceai.com/v1', env: 'VYCE_API_KEY', models: 'VYCE_MODELS', dflt: '' },
+];
+const simpleModels = (x) => (process.env[x.models] || x.dflt).split(',').map((m) => m.trim()).filter(Boolean);
+const KIE = { id: 'kie', name: 'kie.ai', baseUrl: 'https://api.kie.ai' };   // у моделей разные протоколы: адаптер kie.js
 const UNO = { id: 'unorouter', name: 'UnoRouter', baseUrl: 'https://api.unorouter.com/v1' };
 const UNO_DEFAULT = 'kimi-k3.1-pro:free,claude-haiku-5-5:free,gemini-3.6-flash:free,deepseek-v4.1-flash:free,gpt-oss-120b:free,glm-5.3-flash:free,qwen3.5-397b-a17b:free,nemotron-3-ultra-550b-a55b:free,minimax-m3.1-flash:free';
 const unoModels = () => (process.env.UNOROUTER_MODELS || UNO_DEFAULT).split(',').map((x) => x.trim()).filter(Boolean);
@@ -56,6 +68,9 @@ export const cachedModels = (id) => cache.get(id)?.models || [];
 export function resolveProvider(user, id) {
   if (!id || id === 'river') return { id: 'river', ...riverProv(), name: 'river.ai' };
   if (id === 'local' && LOCAL.baseUrl) return { ...LOCAL, apiKey: 'none', effort: false };
+  { const x = SIMPLE.find((y) => y.id === id); if (x && process.env[x.env]) return { id: x.id, name: x.name, baseUrl: x.baseUrl, apiKey: process.env[x.env], effort: false }; }
+  if (id === 'kie' && process.env.KIE_API_KEY) return { ...KIE, apiKey: process.env.KIE_API_KEY, effort: false, fetcher: kieFetcher(process.env.KIE_API_KEY), maxConc: 3 };
+  if (id === 'puter' && process.env.PUTER_AUTH_TOKEN) return { ...PUTER, apiKey: process.env.PUTER_AUTH_TOKEN, effort: false };
   if (id === 'unorouter' && process.env.UNOROUTER_API_KEY) return { ...UNO, apiKey: process.env.UNOROUTER_API_KEY, effort: false };
   if (id === 'perplexity' && pplxUp(user)) return { id: 'perplexity', name: 'Perplexity Agent', baseUrl: 'https://api.perplexity.ai', apiKey: '', effort: false };
   if (id === 'groq' && bridgeHas(user.id, 'api.groq.com')) return { ...GROQ, apiKey: '', effort: true, fetcher: (url, init) => bridgeFetch(user.id, url, init) };   // запросы выполняет приложение (ключ Groq только на телефоне)
@@ -75,6 +90,16 @@ export async function providersFor(user) {
   const rm = await listModels(rp, 'river');
   out.push({ id: 'river', name: 'river.ai', builtin: true, baseUrl: rp.baseUrl, effort: true, models: rm.filter((m) => config.river.allowed.includes(m)) });
   if (LOCAL.baseUrl && process.env.LOCAL_LLM !== '0') out.push({ id: 'local', name: LOCAL.name, builtin: true, baseUrl: LOCAL.baseUrl, effort: false, models: [localModel()] });
+  if (process.env.KIE_API_KEY) out.push({ id: 'kie', name: KIE.name, builtin: true, baseUrl: KIE.baseUrl, effort: false, models: kieModels() });
+  for (const x of SIMPLE) if (process.env[x.env]) {
+    const all = await listModels({ id: x.id, baseUrl: x.baseUrl, apiKey: process.env[x.env] }, x.id);
+    const want = simpleModels(x);
+    out.push({ id: x.id, name: x.name, builtin: true, baseUrl: x.baseUrl, effort: false, models: process.env[x.models] ? want : all.length ? all : want });
+  }
+  if (process.env.PUTER_AUTH_TOKEN) {
+    const all = await listModels({ ...PUTER, apiKey: process.env.PUTER_AUTH_TOKEN }, 'puter');
+    out.push({ id: 'puter', name: PUTER.name, builtin: true, baseUrl: PUTER.baseUrl, effort: false, models: all.length ? all : putersModels() });
+  }
   if (process.env.COARENA_API_KEY) {
     const all = await listModels({ ...COARENA, apiKey: process.env.COARENA_API_KEY }, 'coarena');
     const want = coarenaModels();
@@ -94,6 +119,10 @@ export async function providersFor(user) {
 }
 
 export const PRESETS = [
+  { name: 'Dahl Inference', baseUrl: 'https://inference.dahl.global/v1', models: '', keyUrl: 'https://inference.dahl.global', note: 'OpenAI-совместимый; список моделей подтягивается сам' },
+  { name: 'Cohere', baseUrl: 'https://api.cohere.ai/compatibility/v1', models: 'command-a-03-2025,command-r-plus-08-2024,command-r7b-12-2024', keyUrl: 'https://dashboard.cohere.com/api-keys', note: 'Command-модели; бесплатный пробный ключ на dashboard.cohere.com' },
+  { name: 'Vyce AI', baseUrl: 'https://vyceai.com/v1', models: '', keyUrl: 'https://vyceai.com', note: 'Прокси к Claude, GPT, DeepSeek и др.; ключ в личном кабинете' },
+  { name: 'Puter', baseUrl: PUTER.baseUrl, models: '', keyUrl: 'https://puter.com/dashboard', note: 'Токен Puter (Dashboard → API token). Модели GPT, Claude, Gemini и др. через один ключ' },
   { name: 'UnoRouter', baseUrl: UNO.baseUrl, models: UNO_DEFAULT, keyUrl: 'https://unorouter.com', note: 'Модели :free — бесплатные; для части нужно один раз дать согласие на сайте' },
   { name: 'Coarena', baseUrl: COARENA.baseUrl, models: 'gpt-6-luna,gemini-3-8-flash,deepseek-v4-1-flash-1017', keyUrl: 'https://coarena.ai/api', note: 'Бесплатный ключ на coarena.ai/api (30 запросов/мин)' },
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', models: '', keyUrl: 'https://openrouter.ai/keys' },
