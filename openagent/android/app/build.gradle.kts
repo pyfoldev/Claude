@@ -13,8 +13,8 @@ android {
         applicationId = "openagent.app.com"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "3.0"
         // Адрес вашего сервера и Web client ID для входа через Google (из google-services.json)
         buildConfigField("String", "SERVER_URL", "\"https://openagents.duckdns.org\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"199268040211-o81u4shtd4trbemiorddnjs3jm7acd9g.apps.googleusercontent.com\"")
