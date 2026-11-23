@@ -107,7 +107,56 @@ const MODELS := {
 	"broom": {"id": "wooden_broom", "fit": "h", "v": 1.3},
 	"spraybottle": {"id": "multi_cleaner_bottle", "fit": "h", "v": 0.28},
 }
+const KENNEY := {
+	"fridge": {"f": "kitchenFridge", "fit": "h", "v": 1.85},
+	"toilet": {"f": "toilet", "fit": "h", "v": 0.78},
+	"bathtub": {"f": "bathtub", "fit": "w", "v": 1.75},
+	"washbasin": {"f": "bathroomSink", "fit": "h", "v": 1.0},
+	"washer": {"f": "washer", "fit": "h", "v": 0.9},
+	"trashcan": {"f": "trashcan", "fit": "h", "v": 0.6},
+}
 static var _scenes: Dictionary = {}
+
+## Модель из внешнего файла (fbx/glb), вписанная по размеру. grunge — затемнить и «загрязнить» материалы.
+static func ext_model(path: String, fit: String, v: float, grunge := false, yaw := 0.0) -> Node3D:
+	if not _scenes.has(path):
+		_scenes[path] = load(path) if ResourceLoader.exists(path) else null
+	var ps: PackedScene = _scenes[path]
+	if ps == null:
+		return null
+	var inst: Node3D = ps.instantiate()
+	var acc := [null]
+	_aabb_rec(inst, Transform3D.IDENTITY, acc)
+	if acc[0] == null:
+		inst.queue_free()
+		return null
+	var bb: AABB = acc[0]
+	var k := (v / maxf(bb.size.y, 0.001)) if fit == "h" else (v / maxf(maxf(bb.size.x, bb.size.z), 0.001))
+	var holder := Node3D.new()
+	var body := Node3D.new()
+	body.name = "body"
+	holder.add_child(body)
+	inst.scale = Vector3.ONE * k
+	var ctr := bb.get_center()
+	inst.position = Vector3(-ctr.x * k, -bb.position.y * k, -ctr.z * k)
+	inst.rotation_degrees.y = yaw
+	body.add_child(inst)
+	holder.set_meta("size", bb.size * k)
+	holder.set_meta("inst", inst)
+	if grunge:
+		_grunge(inst)
+	return holder
+
+static func _grunge(n: Node) -> void:
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		for i in m.mesh.get_surface_count():
+			var src := m.get_active_material(i)
+			if src is StandardMaterial3D:
+				var mt := src.duplicate() as StandardMaterial3D
+				mt.albedo_color = mt.albedo_color * 0.8
+				mt.roughness = 0.55
+				m.set_surface_override_material(i, mt)
 
 static func _aabb_rec(n: Node3D, parent_xf: Transform3D, acc: Array) -> void:
 	var xf := parent_xf * n.transform
@@ -152,6 +201,8 @@ static func model(kind: String, o := {}) -> Node3D:
 	inst.scale = sc
 	var ctr := bb.get_center()
 	inst.position = Vector3(-ctr.x * sc.x, -bb.position.y * sc.y, -ctr.z * sc.z)
+	if kind in ["mirror", "frame1", "frame2", "frame3", "frame4", "frame5"]:
+		inst.position.y = -ctr.y * sc.y
 	holder.add_child(inst)
 	var size := bb.size * sc
 	holder.set_meta("size", size)
@@ -174,6 +225,36 @@ static func _clutter(holder: Node3D, kind: String, o: Dictionary) -> void:
 			holder.add_child(it)
 
 static func make(kind: String, o := {}) -> Node3D:
+	if KENNEY.has(kind):
+		var kd: Dictionary = KENNEY[kind]
+		var km := ext_model("res://assets/kenney/%s.fbx" % kd.f, kd.fit, kd.v, true)
+		if km != null:
+			km.name = kind
+			col(km, km.get_meta("size"), Vector3(0, km.get_meta("size").y / 2.0, 0))
+			return km
+	if kind == "counter":
+		var cw: float = o.get("w", 2.0)
+		var cn := Node3D.new()
+		cn.name = "counter"
+		var nmod := maxi(1, int(round(cw / 0.9)))
+		var mw := cw / nmod
+		var has_sink: bool = o.get("sink", true)
+		var ok := true
+		for i in nmod:
+			var nm := "kitchenSink" if (has_sink and i == nmod / 2) else ("kitchenCabinetDrawer" if i % 2 == 0 else "kitchenCabinet")
+			var m1 := ext_model("res://assets/kenney/%s.fbx" % nm, "w", mw - 0.02, true)
+			if m1 == null:
+				ok = false
+				break
+			var sz1: Vector3 = m1.get_meta("size")
+			var sy := 0.9 / sz1.y
+			m1.scale = Vector3(1.0, sy, 1.0)
+			m1.position = Vector3(-cw / 2.0 + mw * (i + 0.5), 0, 0)
+			cn.add_child(m1)
+		if ok:
+			col(cn, Vector3(cw, 0.9, 0.62), Vector3(0, 0.45, 0))
+			return cn
+		cn.queue_free()
 	if kind == "picture":
 		var fk := "frame%d" % (1 + int(abs(hash(str(o))) + int(o.get("fr", 0))) % 5)
 		var fm := model(fk, o)

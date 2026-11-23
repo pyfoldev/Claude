@@ -211,6 +211,15 @@ func open_doors_near(delta: float) -> void:
 			n.set_open(true)
 
 func animate(delta: float) -> void:
+	if model and model.has_meta("ap"):
+		var ap: AnimationPlayer = model.get_meta("ap")
+		var want := "Idle"
+		if moving:
+			want = "Run" if state in ["chase", "lunge"] else "Walk"
+		if ap.has_animation(want) and ap.current_animation != want:
+			ap.play(want, 0.25)
+		moving = false
+		return
 	var body := model.get_node_or_null("body") if model else null
 	if body == null:
 		return

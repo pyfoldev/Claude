@@ -21,7 +21,110 @@ static func _eyes(parent: Node3D, y: float, z: float, spread: float, size: float
 		var e := Props.box(parent, Vector3(size, size * 0.5, 0.02), Vector3(s * spread, y, z), em)
 		e.name = "eye"
 
+static var _anim_cache: Dictionary = {}
+
+## Хозяин: реальная анимированная модель (OpenGameArt «3D Horror Game Monster», CC0).
+static func _build_host() -> Node3D:
+	var m := Props.ext_model("res://assets/monsters/horror/Walk.fbx", "h", 2.35, false, 180.0)
+	if m == null:
+		return null
+	var inst: Node3D = m.get_meta("inst")
+	var ap: AnimationPlayer = null
+	for a in inst.find_children("*", "AnimationPlayer", true, false):
+		ap = a
+	if ap:
+		var lib: AnimationLibrary = ap.get_animation_library("") if ap.has_animation_library("") else null
+		for nm in ["Idle", "Run"]:
+			var sc: PackedScene = load("res://assets/monsters/horror/%s.fbx" % nm)
+			if sc and lib:
+				var tmp: Node = sc.instantiate()
+				for ta in tmp.find_children("*", "AnimationPlayer", true, false):
+					var names: PackedStringArray = ta.get_animation_list()
+					var pick := ""
+					for n2 in names:
+						if n2.to_lower().contains(nm.to_lower()):
+							pick = n2
+					if pick == "" and names.size() > 0:
+						pick = names[names.size() - 1]
+					if pick != "":
+						var an: Animation = ta.get_animation(pick).duplicate()
+						an.loop_mode = Animation.LOOP_LINEAR
+						lib.add_animation(nm, an)
+				tmp.queue_free()
+		if lib and lib.has_animation("Walk"):
+			lib.get_animation("Walk").loop_mode = Animation.LOOP_LINEAR
+		m.set_meta("ap", ap)
+		m.set_meta("anim_map", {"idle": "Idle", "walk": "Walk", "run": "Run"})
+		ap.autoplay = "Idle" if lib and lib.has_animation("Idle") else "Walk"
+	m.set_meta("head", 2.2)
+	return m
+
+static func _build_shadow(sc: float) -> Node3D:
+	var m := Props.ext_model("res://assets/monsters/darsh/Darsh.glb", "h", 2.1 * sc, false, 180.0)
+	if m == null:
+		return null
+	var blk := StandardMaterial3D.new()
+	blk.albedo_color = Color(0.015, 0.015, 0.02)
+	blk.roughness = 0.4
+	blk.rim_enabled = true
+	blk.rim = 0.9
+	blk.rim_tint = 0.2
+	for mi in (m.get_meta("inst") as Node3D).find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).material_override = blk
+	var body: Node3D = m.get_node("body")
+	var white := Mats.color(Color(1, 1, 0.95), 0.2, 6.0)
+	for sx in [-1, 1]:
+		var e := Props.box(body, Vector3(0.09, 0.04, 0.02), Vector3(sx * 0.1, 1.55 * sc, -0.2), white)
+		e.name = "eye"
+	m.set_meta("head", 1.75 * sc)
+	return m
+
+static func _build_human(skin: String, h: float, tint: Color) -> Node3D:
+	var m := Props.ext_model("res://assets/monsters/kenney/characterMedium.fbx", "h", h, false, 180.0)
+	if m == null:
+		return null
+	var mt := StandardMaterial3D.new()
+	mt.albedo_texture = load("res://assets/monsters/kenney/%s.png" % skin)
+	mt.albedo_color = tint
+	mt.roughness = 0.85
+	for mi in (m.get_meta("inst") as Node3D).find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).material_override = mt
+	m.set_meta("head", h)
+	# анимация покоя/ходьбы из отдельных FBX (общий скелет Kenney)
+	var inst: Node3D = m.get_meta("inst")
+	var ap := AnimationPlayer.new()
+	inst.add_child(ap)
+	var lib := AnimationLibrary.new()
+	for pair in [["Idle", "idle"], ["Run", "run"], ["Walk", "run"]]:
+		var sc: PackedScene = load("res://assets/monsters/kenney/%s.fbx" % pair[1])
+		if sc == null:
+			continue
+		var tmp: Node = sc.instantiate()
+		for ta in tmp.find_children("*", "AnimationPlayer", true, false):
+			var names: PackedStringArray = ta.get_animation_list()
+			for nn in names:
+				if nn.to_lower().contains(pair[1]):
+					var an: Animation = ta.get_animation(nn).duplicate()
+					an.loop_mode = Animation.LOOP_LINEAR
+					lib.add_animation(pair[0], an)
+					break
+		tmp.free()
+	ap.add_animation_library("", lib)
+	ap.root_node = NodePath("..")
+	ap.autoplay = "Idle"
+	m.set_meta("ap", ap)
+	return m
+
 static func build(type: String, o := {}) -> Node3D:
+	var ext: Node3D = null
+	match type:
+		"host": ext = _build_host()
+		"shadow": ext = _build_shadow(float(o.get("scale", 1.0)))
+		"mother": ext = _build_human("survivorFemaleA", 1.85, Color(0.35, 0.3, 0.35))
+		"artem": ext = _build_human("survivorMaleB", 1.78, Color(0.9, 0.9, 1.0))
+		"child": ext = _build_human("zombieA", 1.05, Color(0.8, 0.7, 0.7))
+	if ext != null:
+		return ext
 	var root := Node3D.new()
 	var black := Mats.color(Color(0.02, 0.02, 0.03), 0.9)
 	match type:

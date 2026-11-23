@@ -55,6 +55,24 @@ static func van_exit(L: Level, pos: Vector3, yaw := 0.0) -> void:
 	root.position = pos
 	root.rotation_degrees.y = yaw
 	L.add_child(root)
+	var vm := Props.ext_model("res://assets/vehicles/Van.fbx", "w", 5.0, false, 0.0)
+	if vm != null:
+		root.add_child(vm)
+		vm.rotation_degrees.y = 0.0
+		var lb0 := Label3D.new()
+		lb0.text = "ЧистоДом"
+		lb0.font_size = 90; lb0.pixel_size = 0.0035; lb0.outline_size = 22
+		lb0.outline_modulate = Color(0.0, 0.0, 0.0)
+		lb0.position = Vector3(1.2, 1.35, -0.3); lb0.rotation_degrees = Vector3(0, 90, 0)
+		root.add_child(lb0)
+		var lb1 := lb0.duplicate()
+		lb1.position = Vector3(-1.2, 1.35, -0.3); lb1.rotation_degrees = Vector3(0, -90, 0)
+		root.add_child(lb1)
+		Props.col(root, Vector3(2.6, 2.4, 5.0), Vector3(0, 1.2, 0))
+		var side0 := Vector3(cos(deg_to_rad(yaw)), 0, -sin(deg_to_rad(yaw)))
+		L.b.interact(pos + Vector3(0, 1.0, 0) + side0 * 1.9, Vector3(2.0, 1.8, 3.0), "Фургон: закончить смену", func(p): L.try_finish(), {"layer": 2})
+		L.b.interact(pos + Vector3(0, 1.0, 0) - side0 * 1.9, Vector3(2.0, 1.8, 3.0), "Фургон: закончить смену", func(p): L.try_finish(), {"layer": 2})
+		return
 	var white := Mats.color(Color(0.82, 0.83, 0.8), 0.35, 0.0, 0.3)
 	var blue := Mats.color(Color(0.08, 0.28, 0.6), 0.4)
 	var dark := Mats.color(Color(0.05, 0.05, 0.06), 0.6)
