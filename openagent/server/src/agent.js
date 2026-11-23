@@ -10,7 +10,7 @@ import { prepareMcp } from './mcp.js';
 import { scenarioGuide } from './scenarios.js';
 import { workspaceOf, codeDir, projectDir } from './workspace.js';
 import { searchMemories, coreMemories, extractMemories } from './memory.js';
-import { resolveProvider, groqUp, localUp, localModel } from './providers.js';
+import { resolveProvider, groqUp } from './providers.js';
 import { setStarter } from './scheduler.js';
 import { extractText, DOC_EXT } from './extract.js';
 import { AUDIO_EXT } from './transcribe.js';
@@ -31,22 +31,6 @@ const EFFORT_HINT = {
 const HISTORY_BUDGET = 16000;  // символов истории до суммаризации (≈6–7k токенов)
 const KEEP_RECENT = 7000;
 const MAXTOK = { voice: 250, chat: 2200, code: 6000 };
-
-/** Болтовня: короткая реплика без вложений, без запроса фактов/действий/кода/файлов — её берёт локальная малая модель, всё остальное — облако. */
-const SMALLTALK = /^(привет|здравствуй|здорово|хай|добрый (день|вечер|утро)|доброе утро|доброй ночи|пока|до свидания|спокойной ночи|спасибо|благодарю|ок|окей|ладно|понятно|ясно|круто|супер|класс|отлично|хорошо|ага|угу|да|нет|мм+|хм+|ха+|лол|как дела|как ты|как жизнь|что нового|чем занимаешься|ты тут|ты кто|как тебя зовут|давай поболтаем|поболтаем|мне скучно|скучно|расскажи что[- ]нибудь|развесели|я устал|мне грустно|у меня хорошее настроение|как настроение)\b/i;
-const NOT_TALK = /\?|найд|поищ|гугл|интернет|сайт|ссылк|файл|документ|pdf|docx|таблиц|график|диаграмм|картинк|нарису|код|скрипт|программ|функци|реши|посчита|вычисл|переведи|перевод|объясн|расскажи (про|о |об )|напиши|сделай|создай|составь|покажи|открой|включи|выключи|поставь|позвони|напомни|будильник|таймер|погод|курс|новост|кто |что такое|сколько|когда|почему|зачем|где |как (сделать|работает|можно|приготовить)|\d/i;
-export function isChitchat(text, hasAttachments) {
-  const t = String(text || '').trim();
-  if (hasAttachments || !t || t.length > 120) return false;
-  if (SMALLTALK.test(t) && t.length <= 80) return true;
-  return !NOT_TALK.test(t) && t.split(/\s+/).length <= 14;   // короткая реплика без вопроса и без просьбы что-то сделать
-}
-function localSystem(user, summary) {
-  const nm = user.name && !/@/.test(user.name) ? user.name : '';
-  return [`Ты — OpenAgent, дружелюбный собеседник. Отвечай по-русски (на языке собеседника), тепло и коротко: 1–4 предложения, без списков и разметки.${nm ? ` Собеседника зовут ${nm}.` : ''}`,
-    'Если просят что-то сделать, найти или посчитать — скажи одним предложением, что можешь это сделать, и попроси повторить просьбу. Не выдумывай факты.',
-    user.instructions ? `Пожелания: ${String(user.instructions).slice(0, 250)}` : '', summary ? `Кратко о прошлом разговоре: ${String(summary).slice(0, 400)}` : ''].filter(Boolean).join('\n');
-}
 
 /** Рабочая папка чата: проект (общая) или своя папка Code-чата. */
 export function cwdFor(user, conv, project) {
@@ -331,13 +315,6 @@ const withTimeout = (p, ms, fallback) => Promise.race([p, new Promise((r) => set
 export function startRun(user, conv, text, attachments, opts = {}) {
   const { voice = false } = opts;
   let prov = resolveProvider(user, voice ? 'river' : opts.provider);
-  // Локальная малая модель на сервере — ТОЛЬКО по явному выбору пользователя (провайдер «Локальная» в окне модели). По умолчанию чат идёт как раньше (river.ai и др.).
-  // Она отвечает коротким промптом и без инструментов; с фото — облако (локальная модель текстовая). Не ответила до первого слова → river.ai.
-  let routedLocal = false;
-  if (!voice && !opts.automation && conv.mode !== 'code' && opts.provider === 'local' && localUp() && !(attachments || []).some((a) => a.mime?.startsWith('image/'))) {
-    const lp = resolveProvider(user, 'local');
-    if (lp?.id === 'local') { prov = lp; opts = { ...opts, model: localModel() }; routedLocal = true; }
-  }
   let effort = voice ? 'auto' : (['low', 'high'].includes(opts.effort) ? opts.effort : 'auto');   // в звонке reasoning_effort не шлём: по замерам он добавлял 0,5–0,9 с до первого слова
   let model = opts.model;
   const hasImages = (attachments || []).some((a) => a.mime?.startsWith('image/'));
@@ -352,8 +329,7 @@ export function startRun(user, conv, text, attachments, opts = {}) {
     if (hasImages && !config.river.visionModels.includes(model)) model = config.river.visionModel;
   } else if (!model) throw new Error('Для своего провайдера выберите модель');
   if (prov.firstTokenMs && prov.id !== 'river') alts = [{ prov: resolveProvider(user, 'river'), model: config.river.fastModel }];   // Dahl/kie.ai не дали первого слова вовремя → river.ai (с пометкой в статусе)
-  if (routedLocal) alts = [{ prov: resolveProvider(user, 'river'), model: config.river.fastModel }];   // локальная модель не ответила до первого слова → river.ai
-  const isVision = prov.id === 'local' ? false : prov.id !== 'river' || config.river.visionModels.includes(model);
+  const isVision = prov.id !== 'river' || config.river.visionModels.includes(model);
   const automation = !!opts.automation;
   const autonomy = opts.autonomy === 'auto' ? 'auto' : 'ask';
   const MAX_STEPS = automation ? 12 : STEPS[effort];
@@ -414,15 +390,14 @@ export function startRun(user, conv, text, attachments, opts = {}) {
       ensureSkills(user.id);
       const skills = db.prepare('SELECT name, description FROM skills WHERE user_id=? ORDER BY name').all(user.id);
       const recentUser = db.prepare("SELECT content FROM messages WHERE conv_id=? AND role='user' ORDER BY id DESC LIMIT 3").all(conv.id).map((r) => r.content).join('\n');   // сценарий держится, пока разговор о нём («да», «этот» тоже считаются)
-      const forLocal = (rows) => (routedLocal ? rows.filter((r) => r.role === 'user' || (r.role === 'assistant' && r.content && !r.tool_calls && !r.attachments)).slice(-12) : rows);   // малой модели — только текст реплик
-      const sysFn = routedLocal ? () => localSystem(user, summary) : (digest) => systemPrompt(user, ws, summary, voice, conv.mode, cwd, effort, skills, automation, opts.everyMin, conv.persona, digest, project?.name, scenarioGuide(recentUser));
+      const sysFn = (digest) => systemPrompt(user, ws, summary, voice, conv.mode, cwd, effort, skills, automation, opts.everyMin, conv.persona, digest, project?.name, scenarioGuide(recentUser));
       // Набор инструментов только растёт в пределах чата — префикс запроса стабилен (кэш), а «мусорные» сообщения («ок») идут без инструментов
       const LITE = /^(привет|здравствуй\S*|спасибо|благодарю|ок|окей|да|нет|хорошо|понял\S*|ясно|супер|круто|пока|ага|ладно)[!.\s]*$/i;
       const prevTools = conv.tools ? conv.tools.split(',') : [];
       const prevUsed = db.prepare("SELECT DISTINCT tool_name FROM messages WHERE conv_id=? AND role='tool'").all(conv.id).map((r) => r.tool_name);
       if (!voice) await prepareMcp(user.id).catch(() => {});
       const wanted = toolDefs(user, conv.mode, { automation, text, effort, voice, hasFiles: !!attachments?.length, used: new Set([...prevTools, ...prevUsed]) });
-      const tools = routedLocal || (LITE.test((text || '').trim()) && !attachments?.length && !automation) ? [] : wanted;
+      const tools = LITE.test((text || '').trim()) && !attachments?.length && !automation ? [] : wanted;
       if (tools.length) db.prepare('UPDATE conversations SET tools=? WHERE id=?').run(tools.map((t) => t.function.name).join(','), conv.id);
       const mkFallbacks = (pv, m) => pv.id === 'river' ? [config.river.fastModel, ...config.river.allowed].filter((x, i, arr) => x !== m && arr.indexOf(x) === i && (!hasImages || config.river.visionModels.includes(x))) : [];
       let fallbacks = mkFallbacks(prov, model);
@@ -528,7 +503,7 @@ ${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
       let useAI = !useOc && conv.mode !== 'code' && !voice && prov.id !== 'perplexity' && !prov.firstTokenMs && chatEngineOn();   // у провайдеров с контролем первого слова — прежний цикл (там есть переключение на запасного)
       if (useAI) {
         try {
-          const hist0 = forLocal(db.prepare('SELECT * FROM messages WHERE conv_id=? AND id>? ORDER BY id').all(conv.id, conv.summarized_upto).filter((r) => !(r.role === 'assistant' && !r.content && !r.tool_calls)));
+          const hist0 = db.prepare('SELECT * FROM messages WHERE conv_id=? AND id>? ORDER BY id').all(conv.id, conv.summarized_upto).filter((r) => !(r.role === 'assistant' && !r.content && !r.tool_calls));
           const all = buildMessages(user, conv.id, sysFn, hist0, isVision);
           const addRow = (m) => { const r = insertMsg(conv.id, m); emit('message', { message: publicMessage(r) }); return r; };
           await runChatAI({ prov, model, system: all[0].content, messages: all.slice(1), toolDefs: tools, signal: ac.signal, maxSteps: MAX_STEPS, maxTokens, effort,
@@ -549,8 +524,8 @@ ${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
         }
       }
       for (step = 0; !useOc && !useAI && step < MAX_STEPS; step++) {
-        const hist = forLocal(db.prepare('SELECT * FROM messages WHERE conv_id=? AND id>? ORDER BY id').all(conv.id, conv.summarized_upto)
-          .filter((r) => !(r.role === 'assistant' && !r.content && !r.tool_calls)));
+        const hist = db.prepare('SELECT * FROM messages WHERE conv_id=? AND id>? ORDER BY id').all(conv.id, conv.summarized_upto)
+          .filter((r) => !(r.role === 'assistant' && !r.content && !r.tool_calls));
         const messages = buildMessages(user, conv.id, sysFn, hist, isVision);
         run.partial = '';
         if (autoLabel && step === 0) emit('status', { text: `Авто → ${autoLabel}` });

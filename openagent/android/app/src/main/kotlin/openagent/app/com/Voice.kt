@@ -50,6 +50,7 @@ fun VoiceScreen(vm: AppVM) {
     BackHandler { vm.stopVoice() }
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) vm.cameraOn = true else vm.toast = "Нужен доступ к камере" }
     var trMenu by remember { mutableStateOf(false) }
+    var modeMenu by remember { mutableStateOf(false) }
     val view = androidx.compose.ui.platform.LocalView.current
     DisposableEffect(Unit) { view.keepScreenOn = true; vm.voiceMuted = false; vm.voiceStartedAt = System.currentTimeMillis(); onDispose { view.keepScreenOn = false } }
     DisposableEffect(Unit) { onDispose { if ((ctx as? android.app.Activity)?.isChangingConfigurations != true) vm.stopVoice() } }
@@ -77,7 +78,16 @@ fun VoiceScreen(vm: AppVM) {
     val breathe by rememberInfiniteTransition(label = "sat").animateFloat(0.9f, 1f, infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "satb")
     val satScale = if (state == VoiceState.Thinking) breathe else 1f
     Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("%d:%02d".format(secs / 60, secs % 60), color = C.dim, fontSize = 15.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("%d:%02d".format(secs / 60, secs % 60), color = C.dim, fontSize = 15.sp)
+            Box {
+                Text(if (vm.voiceMode == "gigaam") "GigaAM + Flux ▾" else "Агент · Haiku ▾", color = C.onContainer, fontSize = 14.sp, modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(C.container).clickable { modeMenu = true }.padding(horizontal = 12.dp, vertical = 5.dp))
+                androidx.compose.material3.DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
+                    androidx.compose.material3.DropdownMenuItem(text = { Text("Агент: Claude Haiku 4.5 + голос «Владимир»" + if (vm.voiceMode == "agent") " ✓" else "") }, onClick = { modeMenu = false; vm.chooseVoiceMode("agent") })
+                    androidx.compose.material3.DropdownMenuItem(text = { Text("GigaAM Multilingual 600M + Deepgram Flux" + (if (vm.voiceMode == "gigaam") " ✓" else "") + (if (!vm.gigaamAvailable) " (на сервере не включён)" else "")) }, onClick = { modeMenu = false; vm.chooseVoiceMode("gigaam") })
+                }
+            }
+        }
         // средняя часть занимает всё свободное место и прокручивается — длинный ответ не сдвигает кнопки
         Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             if (vm.cameraOn) {

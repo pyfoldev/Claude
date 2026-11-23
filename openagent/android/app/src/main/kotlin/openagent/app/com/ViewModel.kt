@@ -892,7 +892,15 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         return "screenshot:${up.id}"
     }
     private var agentFailed = false
-    private val agentVoiceOk get() = !agentFailed && health?.features?.contains("voice-agent") == true
+    var voiceMode by mutableStateOf(store.voiceMode)           // "agent" | "gigaam"
+    /** Переключение режима голоса; идущий звонок перезапускается в новом режиме. */
+    fun chooseVoiceMode(m: String) {
+        if (voiceMode == m) return
+        voiceMode = m; store.voiceMode = m
+        if (voiceJob?.isActive == true) { runCatching { agentSession?.cancel() }; agentSession = null; voiceJob?.cancel(); voiceJob = null; startVoice() }
+    }
+    val gigaamAvailable get() = health?.features?.contains("stt-gigaam") == true
+    private val agentVoiceOk get() = !agentFailed && voiceMode == "agent" && health?.features?.contains("voice-agent") == true
     @Volatile private var agentSession: AgentVoiceSession? = null
     private suspend fun agentVoiceLoop() {
         val lang = if (sttLang == "auto") "ru" else sttLang
@@ -985,7 +993,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
     /** Один сеанс потокового распознавания для звонка: слушаем до паузы (VAD на устройстве) и получаем итог от Deepgram. */
     private suspend fun rtListen(keepWhile: () -> Boolean = { true }): String {
         val lang = if (sttLang == "auto") "ru" else sttLang
-        val s = RtSession(getApplication(), api.sttSocket(lang, silenceMs.toInt()), api.wsClient, { voiceLevel = it }, { voiceCaption = it })
+        val s = RtSession(getApplication(), api.sttSocket(lang, silenceMs.toInt(), if (voiceMode == "gigaam") "gigaam" else ""), api.wsClient, { voiceLevel = it }, { voiceCaption = it })
         if (!s.start()) throw FastStt.Unavailable("микрофон занят")
         try {
             var total = 0; var quiet = 0; var spoke = false

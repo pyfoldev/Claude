@@ -9,6 +9,7 @@ import { startScheduler } from './scheduler.js';
 import { mountSites } from './sites.js';
 import { mountShare } from './extras.js';
 import { attachWs } from './sttStream.js';
+import { gigaamUp } from './gigaam.js';
 
 if (!process.env.JWT_SECRET || /^(change-me|dev-insecure)/.test(process.env.JWT_SECRET)) console.error('⚠ JWT_SECRET не задан или стандартный — любой может подделать токен входа. Задайте длинную случайную строку в .env!');
 const app = express();
@@ -22,7 +23,7 @@ app.get('/captcha', (_req, res) => {
     fs.readFileSync(path.join(pub, 'captcha.html'), 'utf8').replaceAll('__SITEKEY__', config.turnstile.siteKey));
 });
 // версия/возможности сервера: приложение по ним понимает, обновлён ли сервер (потоковое распознавание, потоковая озвучка, команды телефону)
-app.get('/health', (_req, res) => res.json({ ok: true, v: SERVER_V, features: ['stt-stream', 'tts-stream', 'phone', 'docs', 'diag', 'bridge', 'pplx', 'tts-pcm', 'mcp', 'notes', 'todos', 'secrets', 'share', 'compare', 'export', 'watch', 'lookup', 'voice-agent'] }));
+app.get('/health', (_req, res) => res.json({ ok: true, v: SERVER_V, features: [...(gigaamUp() ? ['stt-gigaam'] : []), 'stt-stream', 'tts-stream', 'phone', 'docs', 'diag', 'bridge', 'pplx', 'tts-pcm', 'mcp', 'notes', 'todos', 'secrets', 'share', 'compare', 'export', 'watch', 'lookup', 'voice-agent'] }));
 mountSites(app);
 mountShare(app);
 // Вебхуки автоматизаций: POST /hooks/<token> — запускает задачу агента (токен = секрет в ссылке)
@@ -42,6 +43,7 @@ app.use('/api', api);
 app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: err.message }); });
 
 startScheduler();
+gigaamUp();   // прогрев проверки доступности GigaAM (дальше кэшируется)
 const server = app.listen(config.port, () => console.log(`OpenAgent server on :${config.port}`));
 attachWs(server);
 server.requestTimeout = 0;

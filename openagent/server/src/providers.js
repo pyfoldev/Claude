@@ -17,19 +17,6 @@ const cache = new Map();
 const COARENA = { id: 'coarena', name: 'Coarena', baseUrl: 'https://coarena.ai/api/v1' };
 const GROQ = { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' };
 const groqModels = () => (process.env.GROQ_MODELS || 'openai/gpt-oss-120b').split(',').map((x) => x.trim()).filter(Boolean);
-// Локальная модель на сервере (llama.cpp `llama-server`, OpenAI-совместимый /v1): Qwen3.5-2B для обычного чата, документов и анализа фото. Включается LOCAL_LLM_URL.
-const LOCAL = { id: 'local', name: 'Локальная (Qwen3.5-2B)', baseUrl: (process.env.LOCAL_LLM_URL || '').replace(/\/$/, '') };
-export const localModel = () => process.env.LOCAL_LLM_MODEL || 'qwen3.5-2b';
-let _localUp = false, _localAt = 0;
-/** Сервер локальной модели жив? (кэш на 15 с, обновляется в фоне — вызов не блокирует). */
-export function localUp() {
-  if (!LOCAL.baseUrl || process.env.LOCAL_LLM === '0') return false;
-  if (Date.now() - _localAt > 15000) {
-    _localAt = Date.now();
-    fetch(LOCAL.baseUrl.replace(/\/v1$/, '') + '/health', { signal: AbortSignal.timeout(2500) }).then((r) => { _localUp = r.ok; }).catch(() => { _localUp = false; });
-  }
-  return _localUp;
-}
 // Puter (puter.js): OpenAI-совместимый шлюз к десяткам моделей (GPT, Claude, Gemini, Llama, Mistral…). Ключ — токен Puter (puter.com → Dashboard → API token), PUTER_AUTH_TOKEN.
 const PUTER = { id: 'puter', name: 'Puter', baseUrl: 'https://api.puter.com/puterai/openai/v1' };
 const putersModels = () => (process.env.PUTER_MODELS || 'gpt-5-nano,gpt-5-mini,claude-sonnet-4-5,claude-haiku-4-5,gemini-2.5-flash,deepseek-chat').split(',').map((x) => x.trim()).filter(Boolean);
@@ -67,7 +54,6 @@ export const cachedModels = (id) => cache.get(id)?.models || [];
 
 export function resolveProvider(user, id) {
   if (!id || id === 'river') return { id: 'river', ...riverProv(), name: 'river.ai' };
-  if (id === 'local' && LOCAL.baseUrl) return { ...LOCAL, apiKey: 'none', effort: false };
   { const x = SIMPLE.find((y) => y.id === id); if (x && process.env[x.env]) return { id: x.id, name: x.name, baseUrl: x.baseUrl, apiKey: process.env[x.env], effort: false, ...(x.minTokens ? { minTokens: x.minTokens } : {}), ...(x.firstTokenMs ? { firstTokenMs: x.firstTokenMs } : {}) }; }
   if (id === 'kie' && process.env.KIE_API_KEY) return { ...KIE, apiKey: process.env.KIE_API_KEY, effort: false, fetcher: kieFetcher(process.env.KIE_API_KEY), maxConc: 3, firstTokenMs: 45000 };
   if (id === 'puter' && process.env.PUTER_AUTH_TOKEN) return { ...PUTER, apiKey: process.env.PUTER_AUTH_TOKEN, effort: false };
@@ -89,7 +75,6 @@ export async function providersFor(user) {
   const rp = riverProv();
   const rm = await listModels(rp, 'river');
   out.push({ id: 'river', name: 'river.ai', builtin: true, baseUrl: rp.baseUrl, effort: true, models: rm.filter((m) => config.river.allowed.includes(m)) });
-  if (LOCAL.baseUrl && process.env.LOCAL_LLM !== '0') out.push({ id: 'local', name: LOCAL.name, builtin: true, baseUrl: LOCAL.baseUrl, effort: false, models: [localModel()] });
   if (process.env.KIE_API_KEY) out.push({ id: 'kie', name: KIE.name, builtin: true, baseUrl: KIE.baseUrl, effort: false, models: kieModels() });
   for (const x of SIMPLE) if (process.env[x.env]) {
     const all = await listModels({ id: x.id, baseUrl: x.baseUrl, apiKey: process.env[x.env] }, x.id);

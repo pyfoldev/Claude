@@ -6,12 +6,12 @@
 | Что | Чем |
 |---|---|
 | Движок Code | **opencode** (`opencode serve`, MIT) — цикл агента, инструменты, сжатие контекста; модели river.ai; инструменты OpenAgent (сайты, файлы, документы, графики, поиск, память) подключены через MCP (`ocMcp.js`). Сайты и интерфейсы — через **OpenDesign** (навык `opendesign`: 150+ дизайн-систем, шаблоны, правила ремесла; ставится в `/opt/opendesign`) |
-| Локальная модель | **Qwen3.5-2B** (llama.cpp на CPU сервера, `deploy/setup-local-llm.sh`): включается только вручную (провайдер «Локальная» в окне модели): короткий промпт, без инструментов; по умолчанию чат идёт на облачную модель |
 | Провайдеры | river.ai (по умолчанию), **kie.ai** (адаптер протоколов: Claude/GPT-6/Grok/Gemini/DeepSeek/Kimi), **Puter**, **Dahl Inference**, **Cohere**, **Vyce AI**, Coarena, UnoRouter, Groq, Perplexity и любой OpenAI-совместимый («Свой»). Ключи — в `.env` (см. `.env.example`) или в приложении |
 | Движок Чат | **Vercel AI SDK** (`ai`) — цикл модель↔инструменты со стримингом; инструменты выполняет OpenAgent |
 | Модель | river.ai (OpenAI-совместимый `/chat/completions`, стриминг, tool calls) |
 | Голосовой режим | **Deepgram Voice Agent**: распознавание `nova-3` + мозг **Claude Haiku 4.5** + голос **Flux «Владимир»** в одном потоке (`/api/voice-agent`); сложное агент делегирует функцией `run_task` полному агенту OpenAgent |
-| Речь → текст | Deepgram (`nova-3`, потоковый WebSocket и файлы) |
+| Речь → текст | Deepgram (`nova-3`) или **GigaAM Multilingual 600M** на CPU сервера (`deploy/setup-stt.sh`, `STT_ENGINE=gigaam`) |
+| Голос «GigaAM + Flux» | второй режим звонка (выбор в окне звонка): GigaAM распознаёт → модель отвечает → Deepgram Flux («Владимир») озвучивает |
 | Текст → речь | Fish Audio (`/v1/tts`) |
 | Вход | код на e-mail через Brevo SMTP или Google; капча Cloudflare Turnstile |
 | Память | SQLite: факты + эмбеддинги `mistral-embed` + BM25 (FTS5), гибридный поиск, слияние дублей, вытеснение; резюме длинных чатов; `MEMORY.md` |

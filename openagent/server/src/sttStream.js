@@ -7,6 +7,7 @@ import { config, isOwnerEmail } from './config.js';
 import { db } from './db.js';
 import { registerBridge } from './bridge.js';
 import { voiceAgentSession } from './voiceAgent.js';
+import { gigaamUp, gigaamBridge, gigaamFile } from './gigaam.js';
 
 const DG_HTTP = 'https://api.deepgram.com/v1/listen';
 const DG_WS = 'wss://api.deepgram.com/v1/listen';
@@ -76,14 +77,18 @@ export function attachWs(server) {
     const user = userFrom(req, u);
     if (!user) { socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return socket.destroy(); }
     if (u.pathname === '/api/voice-agent') vaWss.handleUpgrade(req, socket, head, (ws) => voiceAgentSession(ws, (() => { const x = db.prepare('SELECT * FROM users WHERE id=?').get(user.id); x.role = isOwnerEmail(x.email) ? 'owner' : 'user'; return x; })(), u.searchParams));
-    else if (u.pathname === '/api/stt-stream') sttWss.handleUpgrade(req, socket, head, (ws) => bridge(ws, u.searchParams));
+    else if (u.pathname === '/api/stt-stream') sttWss.handleUpgrade(req, socket, head, (ws) => ((u.searchParams.get('engine') === 'gigaam' || config.stt.engine === 'gigaam') && gigaamUp() ? gigaamBridge(ws, u.searchParams, { WebSocket }) : bridge(ws, u.searchParams)));
     else bridgeWss.handleUpgrade(req, socket, head, (ws) => registerBridge(user.id, ws));
   });
 }
 export const attachSttStream = attachWs;
 
 /** Файловое распознавание Deepgram (prerecorded). Язык — "ru"/"en"/…; пусто или "auto" → мультиязычный режим. */
-export async function deepgramTranscribe(buf, _name, mime, language) {
+export async function deepgramTranscribe(buf, name, mime, language) {
+  if (config.stt.engine === 'gigaam' && gigaamUp()) { try { return await gigaamFile(buf); } catch (e) { console.error('GigaAM file failed, Deepgram fallback:', e.message); } }
+  return deepgramFile(buf, name, mime, language);
+}
+async function deepgramFile(buf, _name, mime, language) {
   if (!config.deepgram.apiKey) throw new Error('DEEPGRAM_API_KEY не задан');
   const q = new URLSearchParams({ model: config.deepgram.model, language: langOf(language), smart_format: 'true', punctuate: 'true' });
   const r = await fetch(`${DG_HTTP}?${q}`, { method: 'POST', headers: { Authorization: `Token ${config.deepgram.apiKey}`, 'Content-Type': mime && mime !== 'application/octet-stream' ? mime : 'audio/*' }, body: buf, signal: AbortSignal.timeout(120000) });

@@ -132,6 +132,8 @@ class Store(ctx: Context) {
     var notifyAuto: Boolean get() = p.getBoolean("notifyAuto", true); set(v) = p.edit().putBoolean("notifyAuto", v).apply()
     var updatesSeen: Long get() = p.getLong("updatesSeen", 0L); set(v) = p.edit().putLong("updatesSeen", v).apply()
     var sttLang: String get() = p.getString("sttLang", "auto") ?: "auto"; set(v) = p.edit().putString("sttLang", v).apply()
+    /** Режим голоса: "agent" — Deepgram Voice Agent (Claude Haiku 4.5 + «Владимир»); "gigaam" — распознавание GigaAM Multilingual 600M + ответ модели + озвучка Deepgram Flux. */
+    var voiceMode: String get() = p.getString("voiceMode", "agent") ?: "agent"; set(v) = p.edit().putString("voiceMode", v).apply()
     var dictAuto: Boolean get() = p.getBoolean("dictAuto", true); set(v) = p.edit().putBoolean("dictAuto", v).apply()
     var bargeIn: Int get() = p.getInt("bargeIn", 0); set(v) = p.edit().putInt("bargeIn", v).apply()   // 0 авто (по наушникам), 1 вкл, 2 выкл
     var appLock: Boolean get() = p.getBoolean("appLock", false); set(v) = p.edit().putBoolean("appLock", v).apply()
@@ -159,8 +161,8 @@ class Api(private val store: Store) {
     /** WebSocket потокового распознавания (Deepgram через наш сервер). */
     val wsClient: OkHttpClient get() = SharedHttp.ws
     fun bridgeSocket(): Request = Request.Builder().url(base.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/llm-bridge").apply { store.token?.let { header("Authorization", "Bearer $it") } }.build()
-    fun sttSocket(lang: String, silenceMs: Int = 600): Request =
-        Request.Builder().url(base.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/stt-stream?lang=$lang&silence=$silenceMs")
+    fun sttSocket(lang: String, silenceMs: Int = 600, engine: String = ""): Request =
+        Request.Builder().url(base.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/stt-stream?lang=$lang&silence=$silenceMs" + (if (engine.isNotBlank()) "&engine=$engine" else ""))
             .apply { store.token?.let { header("Authorization", "Bearer $it") } }.build()
     /** Голосовой агент (Deepgram Voice Agent через наш сервер): поток PCM в обе стороны. */
     fun voiceAgentSocket(lang: String, translate: String = ""): Request =

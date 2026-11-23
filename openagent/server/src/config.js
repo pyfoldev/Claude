@@ -41,6 +41,7 @@ export const config = {
     listenModel: env.VOICE_LISTEN_MODEL || 'nova-3',
     speakModel: env.VOICE_SPEAK_MODEL || env.DEEPGRAM_TTS_VOICE || 'flux-vladimir-ru',
   },
+  stt: { engine: (env.STT_ENGINE || 'deepgram').toLowerCase(), gigaamUrl: (env.GIGAAM_URL || 'http://127.0.0.1:8792').replace(/\/$/, '') },   // deepgram | gigaam (GigaAM Multilingual 600M на CPU сервера)
   ttsProvider: (env.TTS_PROVIDER || 'deepgram').toLowerCase(),         // deepgram | fish — переключатель озвучки; при сбое Deepgram автоматически идёт Fish
   fish: {
     apiKey: env.FISH_API_KEY || '',
