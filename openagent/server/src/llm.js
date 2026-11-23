@@ -140,15 +140,45 @@ export function parseDsml(text) {
   return calls;
 }
 
+/** Убирает «мысли» модели из текста: <think>…</think> (MiniMax, Qwen и др. присылают их прямо в content). Работает на потоке: теги могут прийти по кускам. */
+export class ThinkFilter {
+  constructor() { this.inThink = false; this.buf = ''; }
+  push(s) {
+    this.buf += s; let out = '';
+    for (;;) {
+      if (!this.inThink) {
+        const i = this.buf.indexOf('<think>');
+        if (i >= 0) { out += this.buf.slice(0, i); this.buf = this.buf.slice(i + 7); this.inThink = true; continue; }
+        const k = Math.max(0, this.buf.length - 6);   // хвост может оказаться началом «<think>»
+        let keep = 0; for (let n = Math.min(6, this.buf.length); n > 0; n--) if ('<think>'.startsWith(this.buf.slice(-n))) { keep = n; break; }
+        out += this.buf.slice(0, this.buf.length - keep); this.buf = this.buf.slice(this.buf.length - keep); break;
+      }
+      const j = this.buf.indexOf('</think>');
+      if (j >= 0) { this.buf = this.buf.slice(j + 8).replace(/^\s+/, ''); this.inThink = false; continue; }
+      let keep = 0; for (let n = Math.min(7, this.buf.length); n > 0; n--) if ('</think>'.startsWith(this.buf.slice(-n))) { keep = n; break; }
+      this.buf = this.buf.slice(this.buf.length - keep); break;
+    }
+    return out;
+  }
+}
+
 /** Стриминговый чат (OpenAI-совместимый). onText(delta) вызывается на каждый кусок текста. */
-export async function chatStream({ prov = riverProv(), messages, tools, signal, onText, model, effort, maxTokens, onUsage, onRetry, fallbacks, failFast }) {
+export async function chatStream({ prov = riverProv(), messages, tools, signal, onText, onThink, model, effort, maxTokens, onUsage, onRetry, fallbacks, failFast }) {
   const body = { model: model || config.river.model, messages, stream: true, stream_options: { include_usage: true } };
+  if (prov.minTokens && (maxTokens || 0) < prov.minTokens) maxTokens = prov.minTokens;   // рассуждающим моделям нужен запас токенов на «мысли», иначе content пустой
   if (maxTokens) body.max_tokens = maxTokens;
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
 
   for (let tries = 0; ; tries++) {
-    const { res } = await requestWithRetry(prov, body, { signal, effort, onRetry, fallbacks, failFast });
+    // нет первого слова за prov.firstTokenMs (холодный старт, зависание шлюза) → обрываем с понятной ошибкой; agent.js переключит на запасного провайдера
+    const guard = prov.firstTokenMs ? new AbortController() : null; let timedOut = false;
+    const gt = guard && setTimeout(() => { timedOut = true; guard.abort(); }, prov.firstTokenMs);
+    const sig = guard ? (signal ? AbortSignal.any([signal, guard.signal]) : guard.signal) : signal;
+    let res;
+    try { ({ res } = await requestWithRetry(prov, body, { signal: sig, effort, onRetry, fallbacks, failFast })); }
+    catch (e) { clearTimeout(gt); if (timedOut) throw new Error(`${prov.name || 'Провайдер'}: нет ответа за ${Math.round(prov.firstTokenMs / 1000)} с (модель перегружена или «просыпается»)`); throw e; }
     let content = '';
+    const tf = new ThinkFilter();
     const calls = [];
     let sent = 0, dsml = false;       // sent — сколько символов content уже показано; dsml — начался текстовый вызов инструмента
     const flush = (final = false) => {
@@ -163,6 +193,7 @@ export async function chatStream({ prov = riverProv(), messages, tools, signal, 
       let buf = '';
       const dec = new TextDecoder();
       for await (const chunk of res.body) {
+        if (gt && /"(content|reasoning_content|reasoning|tool_calls)"\s*:\s*("|\[|\{)/.test(dec.decode(chunk.slice(0, 600)))) clearTimeout(gt);
         buf += dec.decode(chunk, { stream: true });
         let i;
         while ((i = buf.indexOf('\n')) >= 0) {
@@ -177,7 +208,8 @@ export async function chatStream({ prov = riverProv(), messages, tools, signal, 
           if (j.usage) onUsage?.(j.usage);
           const d = j.choices?.[0]?.delta;
           if (!d) continue;
-          if (d.content) { content += d.content; flush(); }
+          if (d.reasoning_content || d.reasoning) onThink?.();
+          if (d.content) { const vis = tf.push(d.content); if (vis) { content += vis; flush(); } }
           for (const tc of d.tool_calls || []) {
             const k = tc.index ?? 0;
             calls[k] ||= { id: '', type: 'function', function: { name: '', arguments: '' } };
@@ -188,11 +220,13 @@ export async function chatStream({ prov = riverProv(), messages, tools, signal, 
         }
       }
     } catch (e) {
+      if (timedOut) throw new Error(`${prov.name || 'Провайдер'}: нет ответа за ${Math.round(prov.firstTokenMs / 1000)} с (модель перегружена или «просыпается»)`);
       // обрыв потока до первых данных — повторяем запрос целиком; если уже что-то пришло — отдаём как есть
       if (signal?.aborted) throw e;
       if (!content && !calls.length && tries < 2) { onRetry?.({ attempt: tries + 1, delay: 1500, status: 0, model: body.model, switched: false }); await sleep(1500, signal); continue; }
       if (!content && !calls.length) throw new Error(`${prov.name || 'Провайдер'}: поток оборвался (${e.message})`);
     }
+    clearTimeout(gt);
     flush(true);
     let nat = calls.filter(Boolean);
     if (dsml) {

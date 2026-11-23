@@ -35,7 +35,7 @@ const PUTER = { id: 'puter', name: 'Puter', baseUrl: 'https://api.puter.com/pute
 const putersModels = () => (process.env.PUTER_MODELS || 'gpt-5-nano,gpt-5-mini,claude-sonnet-4-5,claude-haiku-4-5,gemini-2.5-flash,deepseek-chat').split(',').map((x) => x.trim()).filter(Boolean);
 // Простые OpenAI-совместимые провайдеры: ключ в .env → провайдер появляется у всех без ввода ключа в приложении.
 const SIMPLE = [
-  { id: 'dahl', name: 'Dahl Inference', baseUrl: 'https://inference.dahl.global/v1', env: 'DAHL_API_KEY', models: 'DAHL_MODELS', dflt: 'deepseek-ai/DeepSeek-V4-Flash-0731,zai-org/GLM-5.3-Flash,MiniMaxAI/MiniMax-M2.7' },
+  { id: 'dahl', name: 'Dahl Inference', baseUrl: 'https://inference.dahl.global/v1', env: 'DAHL_API_KEY', models: 'DAHL_MODELS', dflt: 'deepseek-ai/DeepSeek-V4-Flash-0731', minTokens: 3000, firstTokenMs: 30000, fixed: true },   // MiniMax убран: холодный старт ~80 с и «мысли» в тексте
   { id: 'cohere', name: 'Cohere', baseUrl: 'https://api.cohere.ai/compatibility/v1', env: 'COHERE_API_KEY', models: 'COHERE_MODELS', dflt: 'command-a-03-2025,command-r-plus-08-2024,command-r7b-12-2024' },
   { id: 'vyce', name: 'Vyce AI', baseUrl: 'https://vyceai.com/v1', env: 'VYCE_API_KEY', models: 'VYCE_MODELS', dflt: '' },
 ];
@@ -68,8 +68,8 @@ export const cachedModels = (id) => cache.get(id)?.models || [];
 export function resolveProvider(user, id) {
   if (!id || id === 'river') return { id: 'river', ...riverProv(), name: 'river.ai' };
   if (id === 'local' && LOCAL.baseUrl) return { ...LOCAL, apiKey: 'none', effort: false };
-  { const x = SIMPLE.find((y) => y.id === id); if (x && process.env[x.env]) return { id: x.id, name: x.name, baseUrl: x.baseUrl, apiKey: process.env[x.env], effort: false }; }
-  if (id === 'kie' && process.env.KIE_API_KEY) return { ...KIE, apiKey: process.env.KIE_API_KEY, effort: false, fetcher: kieFetcher(process.env.KIE_API_KEY), maxConc: 3 };
+  { const x = SIMPLE.find((y) => y.id === id); if (x && process.env[x.env]) return { id: x.id, name: x.name, baseUrl: x.baseUrl, apiKey: process.env[x.env], effort: false, ...(x.minTokens ? { minTokens: x.minTokens } : {}), ...(x.firstTokenMs ? { firstTokenMs: x.firstTokenMs } : {}) }; }
+  if (id === 'kie' && process.env.KIE_API_KEY) return { ...KIE, apiKey: process.env.KIE_API_KEY, effort: false, fetcher: kieFetcher(process.env.KIE_API_KEY), maxConc: 3, firstTokenMs: 45000 };
   if (id === 'puter' && process.env.PUTER_AUTH_TOKEN) return { ...PUTER, apiKey: process.env.PUTER_AUTH_TOKEN, effort: false };
   if (id === 'unorouter' && process.env.UNOROUTER_API_KEY) return { ...UNO, apiKey: process.env.UNOROUTER_API_KEY, effort: false };
   if (id === 'perplexity' && pplxUp(user)) return { id: 'perplexity', name: 'Perplexity Agent', baseUrl: 'https://api.perplexity.ai', apiKey: '', effort: false };
@@ -94,7 +94,7 @@ export async function providersFor(user) {
   for (const x of SIMPLE) if (process.env[x.env]) {
     const all = await listModels({ id: x.id, baseUrl: x.baseUrl, apiKey: process.env[x.env] }, x.id);
     const want = simpleModels(x);
-    out.push({ id: x.id, name: x.name, builtin: true, baseUrl: x.baseUrl, effort: false, models: process.env[x.models] ? want : all.length ? all : want });
+    out.push({ id: x.id, name: x.name, builtin: true, baseUrl: x.baseUrl, effort: false, models: process.env[x.models] || x.fixed ? want : all.length ? all : want });
   }
   if (process.env.PUTER_AUTH_TOKEN) {
     const all = await listModels({ ...PUTER, apiKey: process.env.PUTER_AUTH_TOKEN }, 'puter');

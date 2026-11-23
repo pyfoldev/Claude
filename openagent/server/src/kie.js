@@ -12,7 +12,9 @@ export const KIE_ROUTES = Object.fromEntries([
   ...['deepseek-v4-1-flash', 'kimi-k3', 'kimi-k3-1-pro'].map((m) => [m, { kind: 'responses', path: '/openai/v1/responses' }]),
   ...['claude-opus-4-5', 'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-sonnet-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-haiku-5-5', 'claude-fable-5'].map((m) => [m, { kind: 'claude', path: '/claude/v1/messages' }]),
 ]);
-export const kieModels = () => (process.env.KIE_MODELS ? process.env.KIE_MODELS.split(',').map((x) => x.trim()).filter(Boolean) : Object.keys(KIE_ROUTES));
+// Быстрые модели (по замерам: 1–4 с до первого слова) — первыми; Claude (12–15 с, иногда не отвечает) и Grok (долго «думает») — в конце.
+const SLOW = /^(claude|grok)/;
+export const kieModels = () => (process.env.KIE_MODELS ? process.env.KIE_MODELS.split(',').map((x) => x.trim()).filter(Boolean) : [...Object.keys(KIE_ROUTES).filter((m) => !SLOW.test(m)).sort((a, b) => (b === 'deepseek-v4-1-flash') - (a === 'deepseek-v4-1-flash')), ...Object.keys(KIE_ROUTES).filter((m) => SLOW.test(m))]);
 
 const textOf = (c) => (typeof c === 'string' ? c : (c || []).filter((p) => p.type === 'text').map((p) => p.text).join(''));
 const dataUrl = (u) => { const m = /^data:([^;]+);base64,(.*)$/s.exec(u || ''); return m ? { media: m[1], data: m[2] } : null; };
@@ -33,7 +35,7 @@ export function toResponses(b) {
   if (sys.length) o.instructions = sys.join('\n\n');
   if (b.tools?.length) o.tools = b.tools.map((t) => ({ type: 'function', name: t.function.name, description: t.function.description, parameters: t.function.parameters }));
   if (b.max_tokens) o.max_output_tokens = b.max_tokens;
-  if (b.reasoning_effort) o.reasoning = { effort: b.reasoning_effort };
+  o.reasoning = { effort: b.reasoning_effort || process.env.KIE_EFFORT || 'low' };   // по умолчанию — быстро: иначе модели тратят сотни токенов на «размышления» даже для простого вопроса
   return o;
 }
 
@@ -101,7 +103,12 @@ export function kieFetcher(apiKey) {
     if (!route) return jerr(404, `kie.ai: модель ${b.model} не подключена (список: KIE_MODELS)`);
     const wantStream = !!b.stream;
     const body = route.kind === 'responses' ? toResponses(b) : route.kind === 'claude' ? toClaude(b) : b;
-    const up = await fetch(BASE + route.path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: init.signal });
+    // kie.ai иногда «зависает» без ответа (Claude Sonnet — 100+ с): ждём заголовки не дольше 60 с и говорим об этом прямо
+    const hang = new AbortController(); const timer = setTimeout(() => hang.abort(), +process.env.KIE_HEADERS_TIMEOUT_MS || 60000);
+    let up;
+    try { up = await fetch(BASE + route.path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body), signal: init.signal ? AbortSignal.any([init.signal, hang.signal]) : hang.signal }); }
+    catch (e) { clearTimeout(timer); if (init.signal?.aborted) throw e; return jerr(504, hang.signal.aborted ? `kie.ai: модель ${b.model} не ответила за 60 с (перегружена) — выберите другую` : `kie.ai: нет связи (${e.message})`); }
+    clearTimeout(timer);
     const ct = up.headers.get('content-type') || '';
     if (!up.ok || !/event-stream/.test(ct)) {                           // ошибки kie.ai приходят и как HTTP-статус, и как JSON {code,msg} с кодом 200
       const txt = await up.text().catch(() => ''); let j = null; try { j = JSON.parse(txt); } catch {}

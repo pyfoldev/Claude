@@ -351,6 +351,7 @@ export function startRun(user, conv, text, attachments, opts = {}) {
     else if (!model || !config.river.allowed.includes(model)) model = config.river.fastModel;
     if (hasImages && !config.river.visionModels.includes(model)) model = config.river.visionModel;
   } else if (!model) throw new Error('Для своего провайдера выберите модель');
+  if (prov.firstTokenMs && prov.id !== 'river') alts = [{ prov: resolveProvider(user, 'river'), model: config.river.fastModel }];   // Dahl/kie.ai не дали первого слова вовремя → river.ai (с пометкой в статусе)
   if (routedLocal) alts = [{ prov: resolveProvider(user, 'river'), model: config.river.fastModel }];   // локальная модель не ответила до первого слова → river.ai
   const isVision = prov.id === 'local' ? false : prov.id !== 'river' || config.river.visionModels.includes(model);
   const automation = !!opts.automation;
@@ -360,6 +361,7 @@ export function startRun(user, conv, text, attachments, opts = {}) {
   if (runs.has(conv.id)) throw new Error('Агент уже работает в этом чате');
   const ac = new AbortController();
   const run = { ac, partial: '', emitter: new EventEmitter(), done: false, tools: new Map() };
+  let slowT = null;   // если модель долго молчит (холодный старт, очередь) — говорим об этом, а не показываем пустоту
   run.emitter.setMaxListeners(50);
   runs.set(conv.id, run);
   const emit = (type, data = {}) => run.emitter.emit('event', { type, ...data });
@@ -370,6 +372,7 @@ export function startRun(user, conv, text, attachments, opts = {}) {
 
   (async () => {
     const ws = workspaceOf(user.id);
+    slowT = setTimeout(() => emit('status', { text: 'Модель отвечает долго — возможно, холодный старт или очередь…' }), 8000);
     try {
       conv = db.prepare('SELECT * FROM conversations WHERE id=?').get(conv.id);
       if (wantPplx && prov.id !== 'perplexity') emit('status', { text: 'Perplexity недоступен (приложение не подключено) — отвечает DeepSeek' });
@@ -522,7 +525,7 @@ ${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
         }
       }
       // ---- Чат: движок Vercel AI SDK (цикл модель↔инструменты), выполнение инструментов — наше (execOne). Сбой до первого вывода → прежний цикл. ----
-      let useAI = !useOc && conv.mode !== 'code' && !voice && prov.id !== 'perplexity' && chatEngineOn();
+      let useAI = !useOc && conv.mode !== 'code' && !voice && prov.id !== 'perplexity' && !prov.firstTokenMs && chatEngineOn();   // у провайдеров с контролем первого слова — прежний цикл (там есть переключение на запасного)
       if (useAI) {
         try {
           const hist0 = forLocal(db.prepare('SELECT * FROM messages WHERE conv_id=? AND id>? ORDER BY id').all(conv.id, conv.summarized_upto).filter((r) => !(r.role === 'assistant' && !r.content && !r.tool_calls)));
@@ -531,7 +534,8 @@ ${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
           await runChatAI({ prov, model, system: all[0].content, messages: all.slice(1), toolDefs: tools, signal: ac.signal, maxSteps: MAX_STEPS, maxTokens, effort,
             execTool: async (call) => { const r = await execOne(call); step++; return r; }, shouldStop: () => ended,
             cb: {
-              delta: (d) => { if (!run.partial) emit('status', { text: '' }); run.partial += d; emit('delta', { text: d }); },
+              delta: (d) => { clearTimeout(slowT); if (!run.partial) emit('status', { text: '' }); run.partial += d; emit('delta', { text: d }); },
+              think: () => { if (!run.partial) emit('status', { text: 'Думаю…' }); },
               usage: (u) => { usageAcc.prompt += u.prompt_tokens || 0; usageAcc.completion += u.completion_tokens || 0; usageAcc.cached += u.prompt_tokens_details?.cached_tokens || 0; usageAcc.calls++; },
               assistant: (content, calls) => { run.partial = ''; addRow({ role: 'assistant', content, tool_calls: calls.length ? calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) : null }); },
               tool: (id, name, content, files) => finish({ call: { id, function: { name } }, result: content, files }),
@@ -553,7 +557,8 @@ ${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
         const callLlm = () => chatStream({
           prov, effort, messages, tools, signal: ac.signal, model, maxTokens, fallbacks, onRetry, failFast: alts.length > 0,
           onUsage: (u) => { usageAcc.prompt += u.prompt_tokens || 0; usageAcc.completion += u.completion_tokens || 0; usageAcc.cached += u.prompt_tokens_details?.cached_tokens || 0; usageAcc.calls++; },
-          onText: (d) => { if (!run.partial) emit('status', { text: '' }); run.partial += d; emit('delta', { text: d }); },
+          onText: (d) => { clearTimeout(slowT); if (!run.partial) emit('status', { text: '' }); run.partial += d; emit('delta', { text: d }); },
+          onThink: () => { if (!run.partial) emit('status', { text: 'Думаю…' }); },
         });
         let resp;
         for (;;) {
@@ -600,6 +605,7 @@ ${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
       emit('message', { message: publicMessage(r) });
       emit(aborted ? 'done' : 'error', { error: e.message });
     } finally {
+      clearTimeout(slowT);
       logUsage(user.id, usageAcc);
       run.done = true;
       runs.delete(conv.id);

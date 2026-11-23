@@ -2,6 +2,7 @@
 // Инструменты и их выполнение (поиск, графики, файлы, телефон, память…) остаются нашими: SDK лишь ведёт диалог с моделью.
 import { streamText, tool, jsonSchema, stepCountIs } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { ThinkFilter } from './llm.js';
 
 export const chatEngineOn = () => process.env.CHAT_ENGINE !== 'legacy';
 
@@ -55,14 +56,15 @@ export async function runChatAI({ prov, model, system, messages, toolDefs, execT
     });
   }
   const result = streamText({
-    model: provider.chatModel(model), system, messages: toModelMessages(messages), tools, maxOutputTokens: maxTokens, abortSignal: signal, maxRetries: 3,
+    model: provider.chatModel(model), system, messages: toModelMessages(messages), tools, maxOutputTokens: Math.max(maxTokens || 0, prov.minTokens || 0) || undefined, abortSignal: signal, maxRetries: 3,
     stopWhen: [stepCountIs(maxSteps), () => !!shouldStop?.()],
     experimental_repairToolCall: undefined,
   });
-  let text = '', calls = [], results = new Map(), failed = null;
+  let text = '', calls = [], results = new Map(), failed = null; const tf = new ThinkFilter();
   for await (const part of result.fullStream) {
     switch (part.type) {
-      case 'text-delta': text += part.text; cb.delta(part.text); break;
+      case 'text-delta': { const vis = tf.push(part.text); if (vis) { text += vis; cb.delta(vis); } break; }
+      case 'reasoning-delta': cb.think?.(); break;
       case 'tool-call': calls.push({ id: part.toolCallId, name: part.toolName, arguments: JSON.stringify(part.input ?? {}) }); break;
       case 'tool-result': results.set(part.toolCallId, String(part.output ?? '')); break;
       case 'tool-error': results.set(part.toolCallId, `Ошибка: ${part.error?.message || part.error || 'сбой инструмента'}`); break;
