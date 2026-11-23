@@ -9,11 +9,11 @@ func _ready() -> void:
 		chapter = int(args[0])
 	Game.chapter = chapter
 	Game.checkpoint = {}
-	get_tree().change_scene_to_file.call_deferred("res://world/level.tscn")
+	level = load("res://world/level.tscn").instantiate()
+	add_child(level)
 func _process(_d: float) -> void:
 	frames += 1
 	if frames == 8:
-		level = get_tree().current_scene
 		print("scene: ", level.name, " rooms=", level.b.rooms.size(), " patches=", level.b.patches.size(), " doors=", level.b.doors.size())
 	if frames == 40:
 		var p = Game.player

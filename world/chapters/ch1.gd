@@ -55,7 +55,7 @@ func build(L: Level) -> void:
 
 	# ---------- задачи ----------
 	b.task("enter", "Зайти в дом", {"manual": true})
-	b.task("dust", "Протереть пыль в гостиной")
+	b.task("dust", "Протереть пыль на первом этаже")
 	b.task("floor", "Помыть пол на кухне")
 	b.task("sweep", "Подмести мусор в прихожей и коридоре")
 	b.task("vac", "Пропылесосить ковёр в гостиной")
@@ -126,8 +126,7 @@ func build(L: Level) -> void:
 	b.against("bookshelf", "L", "W", 0.3, {"seed": 5}, 0.25)
 	b.prop("picture", b.wp("L", "W", 0.7, 0.0, 1.7) + Vector3(0.12, 0, 0), 90)
 	b.dirt("dust", b.P("L", 0.5, 0.5, 0.775), Vector2(1.0, 0.65), Vector3.UP, "dust")
-	b.dirt("dust", b.wp("L", "N", 0.5, 0.35, 0.8) + Vector3(0, 0, 0), Vector2(0.9, 0.5), Vector3.UP, "dust")
-	b.dirt("dust", b.wp("L", "W", 0.3, 0.25, 2.02), Vector2(1.0, 0.3), Vector3.UP, "dust")
+	b.dirt("dust", b.wp("L", "N", 0.5, 0.35, 0.52), Vector2(0.9, 0.5), Vector3.UP, "dust")
 	b.dirt("dust", b.P("L", 0.15, 0.55, 0.9), Vector2(0.7, 0.7), Vector3.UP, "dust")
 	b.dirt("crumbs", rugpos + Vector3(-0.5, 0.03, -0.3), Vector2(1.4, 1.0), Vector3.UP, "vac")
 	b.dirt("crumbs", rugpos + Vector3(0.8, 0.03, 0.4), Vector2(1.2, 0.9), Vector3.UP, "vac")

@@ -103,8 +103,8 @@ func _ready() -> void:
 func _build_viewmodels() -> void:
 	var cloth := Mats.color(Color(0.85, 0.8, 0.2), 0.95)
 	var rag := Node3D.new()
-	Props.box(rag, Vector3(0.18, 0.04, 0.22), Vector3(0, 0, 0), cloth)
-	Props.box(rag, Vector3(0.12, 0.03, 0.14), Vector3(0.02, 0.03, 0.0), Mats.color(Color(0.8, 0.75, 0.15)))
+	Props.box(rag, Vector3(0.1, 0.03, 0.12), Vector3(0, 0, 0), cloth)
+	Props.box(rag, Vector3(0.07, 0.02, 0.08), Vector3(0.02, 0.03, 0.0), Mats.color(Color(0.8, 0.75, 0.15)))
 	var mop := Node3D.new()
 	Props.cyl(mop, 0.012, 1.1, Vector3(0, 0.1, 0), Mats.color(Color(0.5, 0.35, 0.2)))
 	Props.box(mop, Vector3(0.16, 0.05, 0.1), Vector3(0, -0.45, 0), Mats.color(Color(0.8, 0.8, 0.75), 1.0))
