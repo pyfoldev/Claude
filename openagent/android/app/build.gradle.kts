@@ -13,8 +13,9 @@ android {
         applicationId = "openagent.app.com"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "5.0"
+        versionCode = 6
+        versionName = "6.0"
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }   // телефоны; без x86 — APK заметно меньше
         // Адрес вашего сервера и Web client ID для входа через Google (из google-services.json)
         buildConfigField("String", "SERVER_URL", "\"https://openagents.duckdns.org\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"199268040211-o81u4shtd4trbemiorddnjs3jm7acd9g.apps.googleusercontent.com\"")
@@ -46,6 +47,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isIncludeAndroidResources = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    androidResources { noCompress += "tflite" }
 }
 
 dependencies {
@@ -73,6 +75,7 @@ dependencies {
     implementation("io.coil-kt:coil-svg:2.7.0")
     implementation("com.caverock:androidsvg-aar:1.4")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")      // YAMNet для «двойного хлопка»
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")

@@ -133,6 +133,9 @@ class Store(ctx: Context) {
     var updatesSeen: Long get() = p.getLong("updatesSeen", 0L); set(v) = p.edit().putLong("updatesSeen", v).apply()
     var sttLang: String get() = p.getString("sttLang", "auto") ?: "auto"; set(v) = p.edit().putString("sttLang", v).apply()
     /** Режим голоса: "agent" — Deepgram Voice Agent (Claude Haiku 4.5 + «Владимир»); "gigaam" — распознавание GigaAM Multilingual 600M + ответ модели + озвучка Deepgram Flux. */
+    /** Вызов ассистента двойным хлопком (фоновое прослушивание: YAMNet на телефоне, аудио никуда не отправляется). */
+    var clapWake: Boolean get() = p.getBoolean("clapWake", false); set(v) = p.edit().putBoolean("clapWake", v).apply()
+    var clapSens: String get() = p.getString("clapSens", "normal") ?: "normal"; set(v) = p.edit().putString("clapSens", v).apply()
     var voiceMode: String get() = p.getString("voiceMode", "agent") ?: "agent"; set(v) = p.edit().putString("voiceMode", v).apply()
     var dictAuto: Boolean get() = p.getBoolean("dictAuto", true); set(v) = p.edit().putBoolean("dictAuto", v).apply()
     var bargeIn: Int get() = p.getInt("bargeIn", 0); set(v) = p.edit().putInt("bargeIn", v).apply()   // 0 авто (по наушникам), 1 вкл, 2 выкл

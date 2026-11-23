@@ -116,6 +116,11 @@ fun SettingsScreen(vm: AppVM) {
             }
             Group("Автоответчик") {
                 val csPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { r -> if (r[android.Manifest.permission.READ_PHONE_STATE] == true && r[android.Manifest.permission.ANSWER_PHONE_CALLS] == true) { vm.updCallScreen(true); vm.toast = "Автоответчик включён" } else vm.toast = "Нужны разрешения «телефон» и «принимать вызовы»" }
+                SwitchRow(Icons.Outlined.GraphicEq, "Вызов двойным хлопком", "Хлопните дважды — откроется голосовой звонок. Аплодисменты и стуки игнорируются. Слушает микрофон в фоне (на телефоне, звук никуда не уходит), значок в шторке", vm.clapWake, vm::updClapWake)
+                if (vm.clapWake) {
+                    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { Segmented(listOf("low" to "Строго", "normal" to "Обычно", "high" to "Чутко"), vm.clapSens, vm::updClapSens) }
+                    if (ClapState.last.isNotBlank()) Text("Последнее: ${ClapState.last}", color = C.dim, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp))
+                }
                 SwitchRow(Icons.Outlined.PhoneCallback, "Брать трубку за меня", "Если не отвечаю дольше N секунд — ассистент берёт, говорит что перезвоню, спрашивает что передать и присылает мне. Экспериментально: зависит от телефона", vm.callScreen) { on ->
                     if (!on) vm.updCallScreen(false) else csPerm.launch(arrayOf(android.Manifest.permission.READ_PHONE_STATE, android.Manifest.permission.ANSWER_PHONE_CALLS, android.Manifest.permission.READ_CALL_LOG, android.Manifest.permission.READ_CONTACTS, android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.POST_NOTIFICATIONS))
                 }

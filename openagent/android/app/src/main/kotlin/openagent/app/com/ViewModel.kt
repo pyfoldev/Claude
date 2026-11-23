@@ -869,6 +869,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         screen = Screen.Voice
         if (voiceJob?.isActive == true) return
         VoiceService.start(getApplication()) { stopVoice() }
+        ClapState.paused = true
         stopSpeaking()
         voiceJob = viewModelScope.launch {
             try { if (agentVoiceOk) agentVoiceLoop() else voiceLoop() } catch (e: CancellationException) { throw e } catch (e: Throwable) { err(e) }
@@ -892,6 +893,10 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         return "screenshot:${up.id}"
     }
     private var agentFailed = false
+    var clapWake by mutableStateOf(store.clapWake)
+    var clapSens by mutableStateOf(store.clapSens)
+    fun updClapWake(v: Boolean) { clapWake = v; store.clapWake = v; if (v) ClapService.start(getApplication()) else ClapService.stop(getApplication()) }
+    fun updClapSens(v: String) { clapSens = v; store.clapSens = v }
     var voiceMode by mutableStateOf(store.voiceMode)           // "agent" | "gigaam"
     /** Переключение режима голоса; идущий звонок перезапускается в новом режиме. */
     fun chooseVoiceMode(m: String) {
@@ -954,6 +959,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         val wasActive = voiceJob?.isActive == true
         voiceJob?.cancel(); voiceJob = null
         VoiceService.stop(getApplication())
+        ClapState.paused = false
         runCatching { recorder.cancel() }; runCatching { player.stop() }
         runCatching { agentSession?.cancel() }; agentSession = null
         if (wasActive && running) stopRun()

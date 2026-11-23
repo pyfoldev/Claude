@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
         handleShare(intent)
         if (vm.user != null || Store(this).token != null) UpdatesWorker.schedule(this, Store(this).notifyAuto)
         if (Store(this).callScreen) CallScreenService.start(this)
+        if (Store(this).clapWake) ClapService.start(this)
         Haptics.init(this)
         setContent {
             OpenAgentTheme(vm.dynamicColor, vm.fontScale, vm.amoled) {

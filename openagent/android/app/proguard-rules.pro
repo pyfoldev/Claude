@@ -18,3 +18,7 @@
 -keep class openagent.app.com.UpdatesWorker { *; }
 # WebView JS-мост капчи
 -keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+
+# TensorFlow Lite (YAMNet для двойного хлопка): JNI обращается к классам по имени
+-keep class org.tensorflow.lite.** { *; }
+-dontwarn org.tensorflow.lite.**
