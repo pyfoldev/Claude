@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dmgeuc7xcv053"
+
+[deps]
+
+files=["res://audio/script/lines.speaker.translation", "res://audio/script/lines.text.translation"]
+
+source_file="res://audio/script/lines.csv"
+dest_files=["res://audio/script/lines.speaker.translation", "res://audio/script/lines.text.translation"]
+
+[params]
+
+compress=true
+delimiter=0

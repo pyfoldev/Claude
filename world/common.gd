@@ -176,3 +176,8 @@ static func pickup(L: Level, kind: String, pos: Vector3, prompt: String, cb: Cal
 		n.queue_free()
 		cb.call(p)
 	return n
+
+static func hide_wardrobe_free(L: Level, pos: Vector3) -> void:
+	var n := L.b.prop("wardrobe", pos, 0, {"tint": Color(0.25, 0.2, 0.2)})
+	var spot := L.b.hide_spot(pos, 0.0, "Спрятаться в шкафу")
+	spot.set_meta("hide_pos", pos)
