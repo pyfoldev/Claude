@@ -10,6 +10,7 @@ import { coreMemories } from './memory.js';
 import { startRun, phoneCall, phoneResult, runs } from './agent.js';
 import { runTool, voiceFunction } from './tools.js';
 import { workspaceOf } from './workspace.js';
+import { phoneFast, phoneModelEnabled } from './phoneModel.js';
 
 const DG_AGENT = 'wss://agent.deepgram.com/v1/agent/converse';
 const MAX_SESSION_MS = 30 * 60 * 1000;
@@ -78,6 +79,21 @@ export function voiceAgentSession(ws, user, params) {
   const conv = ensureVoiceConv(user, params.get('conv'), 'Голосовой разговор');
   const history = db.prepare("SELECT role, content FROM messages WHERE conv_id=? AND role IN ('user','assistant') AND content!='' AND tool_calls IS NULL ORDER BY id DESC LIMIT 8").all(conv.id).reverse();
   let taskConv = null;
+  // Быстрый путь: малая модель получает каждую распознанную фразу сразу, не дожидаясь Haiku; если уверена — выполняет команду телефону сама.
+  // Позже Haiku может вызвать `phone` с тем же действием — повторно не выполняем, отдаём ему готовый результат.
+  const done = new Map(); let pendingFast = null;
+  const BAD = /^(Нет ответа от телефона|Нужно подтверждение|Ошибка|Управление телефоном недоступно|Нужна служба доступности|Нужно разрешение)/;
+  const runPhone = (a, text) => runTool(user, 'phone', a, { cwd: workspaceOf(user.id), autonomy: 'ask', userText: text, attach() {}, onOutput() {}, endTurn() {}, signal: AbortSignal.timeout(30000), phone: (x) => phoneCall(user.id, (type, data) => send({ t: type, ...data }), x) });
+  const fastTry = async (text) => {
+    const fast = await phoneFast(text); if (!fast) return null;
+    send({ t: 'tool', name: 'phone_fast' });
+    const res = [];
+    for (const a of fast.actions) {
+      const r = String(await runPhone(a, text)); res.push(r);
+      if (!BAD.test(r)) done.set(JSON.stringify(a), { r, at: Date.now() });
+    }
+    return res;
+  };
   const t0 = Date.now();
   let ready = false, dropOut = false, muted = false, closed = false;
   const queue = [];
@@ -99,7 +115,10 @@ export function voiceAgentSession(ws, user, params) {
     send({ t: 'tool', name: f.name });
     let out;
     try {
-      if (f.name === 'run_task') out = await runTask(args);
+      if (f.name === 'phone' && pendingFast) await Promise.race([pendingFast, new Promise((r) => setTimeout(r, 2000))]);
+      const dup = f.name === 'phone' ? done.get(JSON.stringify(args)) : null;
+      if (dup && Date.now() - dup.at < 30000) out = `Уже выполнено: ${dup.r}. Просто коротко подтверди пользователю.`;
+      else if (f.name === 'run_task') out = await runTask(args);
       else if (FAST_TOOLS.includes(f.name)) {
         out = await runTool(user, f.name, args, {
           cwd: workspaceOf(user.id), autonomy: 'auto', userText: '', attach() {}, onOutput() {}, endTurn() {}, signal: AbortSignal.timeout(60000),
@@ -146,7 +165,7 @@ export function voiceAgentSession(ws, user, params) {
       case 'AgentAudioDone': send({ t: 'state', state: 'listening' }); break;
       case 'ConversationText': {
         const text = clean(j.content); if (!text) break;
-        if (j.role === 'user') { send({ t: 'user', text }); saveMsg(conv.id, 'user', text); }
+        if (j.role === 'user') { send({ t: 'user', text }); saveMsg(conv.id, 'user', text); if (phoneModelEnabled()) pendingFast = fastTry(text).catch(() => null); }
         else { send({ t: 'agent', text }); saveMsg(conv.id, 'assistant', text); }
         break;
       }
