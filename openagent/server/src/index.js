@@ -23,6 +23,12 @@ app.get('/captcha', (_req, res) => {
     fs.readFileSync(path.join(pub, 'captcha.html'), 'utf8').replaceAll('__SITEKEY__', config.turnstile.siteKey));
 });
 // версия/возможности сервера: приложение по ним понимает, обновлён ли сервер (потоковое распознавание, потоковая озвучка, команды телефону)
+// Офлайн-модель управления телефоном: приложение скачивает её отсюда (положите phone.gguf в DATA_DIR/models/). Поддерживает докачку (Range).
+app.get('/models/phone.gguf', (req, res) => {
+  const f = path.resolve(config.dataDir, 'models', 'phone.gguf');
+  if (!fs.existsSync(f)) return res.status(404).json({ error: 'phone.gguf не найден в DATA_DIR/models' });
+  res.sendFile(f);
+});
 app.get('/health', (_req, res) => res.json({ ok: true, v: SERVER_V, features: [...(gigaamUp() ? ['stt-gigaam'] : []), 'stt-stream', 'tts-stream', 'phone', 'docs', 'diag', 'bridge', 'pplx', 'tts-pcm', 'mcp', 'notes', 'todos', 'secrets', 'share', 'compare', 'export', 'watch', 'lookup', 'voice-agent'] }));
 mountSites(app);
 mountShare(app);

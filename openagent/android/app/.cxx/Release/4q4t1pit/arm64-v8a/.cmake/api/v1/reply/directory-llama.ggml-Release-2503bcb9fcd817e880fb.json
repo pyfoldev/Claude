@@ -1,0 +1,107 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"llama/ggml/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 352,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 353,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 417,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"llama/ggml/src/libggml.a"
+			],
+			"targetId" : "ggml::@96d03cab6fb05857ea28",
+			"targetIndex" : 0,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include",
+			"paths" : 
+			[
+				"llama/ggml/include/ggml.h",
+				"llama/ggml/include/ggml-cpu.h",
+				"llama/ggml/include/ggml-alloc.h",
+				"llama/ggml/include/ggml-backend.h",
+				"llama/ggml/include/ggml-blas.h",
+				"llama/ggml/include/ggml-cann.h",
+				"llama/ggml/include/ggml-cpp.h",
+				"llama/ggml/include/ggml-cuda.h",
+				"llama/ggml/include/ggml-opt.h",
+				"llama/ggml/include/ggml-metal.h",
+				"llama/ggml/include/ggml-rpc.h",
+				"llama/ggml/include/ggml-virtgpu.h",
+				"llama/ggml/include/ggml-sycl.h",
+				"llama/ggml/include/ggml-vulkan.h",
+				"llama/ggml/include/ggml-webgpu.h",
+				"llama/ggml/include/ggml-zendnn.h",
+				"llama/ggml/include/ggml-openvino.h",
+				"llama/ggml/include/gguf.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"llama/ggml/src/libggml-base.a"
+			],
+			"targetId" : "ggml-base::@96d03cab6fb05857ea28",
+			"targetIndex" : 1,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/ggml",
+			"paths" : 
+			[
+				"/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a/llama/ggml/ggml-config.cmake",
+				"/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a/llama/ggml/ggml-config-version.cmake"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "llama/ggml",
+		"source" : "llama/ggml"
+	}
+}

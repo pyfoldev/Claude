@@ -8,14 +8,17 @@ plugins {
 android {
     namespace = "openagent.app.com"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
 
     defaultConfig {
         applicationId = "openagent.app.com"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "10.0"
-        ndk { abiFilters += listOf("arm64-v8a") }   // современные телефоны (64 бит); без 32-битных и x86 — APK заметно меньше (ONNX Runtime и MediaPipe тяжёлые)
+        versionCode = 11
+        versionName = "11.0"
+        ndk { abiFilters += listOf("arm64-v8a") }
+        externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared", "-DCMAKE_BUILD_TYPE=Release", "-DGGML_LLAMAFILE=ON"); cppFlags += "-O3" } }   // современные телефоны (64 бит); без 32-битных и x86 — APK заметно меньше (ONNX Runtime и MediaPipe тяжёлые)
         // Адрес вашего сервера и Web client ID для входа через Google (из google-services.json)
         buildConfigField("String", "SERVER_URL", "\"https://openagents.duckdns.org\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"199268040211-o81u4shtd4trbemiorddnjs3jm7acd9g.apps.googleusercontent.com\"")

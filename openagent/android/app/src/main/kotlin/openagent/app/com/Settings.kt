@@ -114,6 +114,7 @@ fun SettingsScreen(vm: AppVM) {
                     Row3(Icons.Outlined.BugReport, "Последний сбой приложения", crash.lineSequence().drop(1).firstOrNull().orEmpty().take(90), onClick = { copyToClipboard(ctx0, crash); vm.toast = "Отчёт скопирован — пришлите его разработчику" }) { Icon(Icons.Outlined.ContentCopy, null, tint = C.dim) }
                 }
             }
+            Group("Оффлайн-режим") { OfflineSettings(vm) }
             Group("Автоответчик") {
                 val csPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { r -> if (r[android.Manifest.permission.READ_PHONE_STATE] == true && r[android.Manifest.permission.ANSWER_PHONE_CALLS] == true) { vm.updCallScreen(true); vm.toast = "Автоответчик включён" } else vm.toast = "Нужны разрешения «телефон» и «принимать вызовы»" }
                 SwitchRow(Icons.Outlined.PhoneCallback, "Брать трубку за меня", "Если не отвечаю дольше N секунд — ассистент берёт, говорит что перезвоню, спрашивает что передать и присылает мне. Экспериментально: зависит от телефона", vm.callScreen) { on ->

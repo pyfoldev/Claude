@@ -1,0 +1,14 @@
+/home/user/Claude/openagent/android/app/src/main/cpp/CMakeLists.txt
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/CMakeLists.txt
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/build-info.cmake
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/common.cmake
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/license.cmake
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/llama-config.cmake.in
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/win-app.cmake
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/CMakeLists.txt
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/cmake/common.cmake
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/cmake/ggml-config.cmake.in
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/src/CMakeLists.txt
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/src/ggml-cpu/CMakeLists.txt
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/src/CMakeLists.txt
+/home/user/Claude/openagent/android/app/src/main/cpp/llama/vendor/CMakeLists.txt

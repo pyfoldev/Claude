@@ -1,0 +1,64 @@
+{
+  "buildFiles": [
+    "/home/user/Claude/openagent/android/app/src/main/cpp/CMakeLists.txt",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/CMakeLists.txt",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/build-info.cmake",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/common.cmake",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/license.cmake",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/llama-config.cmake.in",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/cmake/win-app.cmake",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/CMakeLists.txt",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/cmake/common.cmake",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/cmake/ggml-config.cmake.in",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/src/CMakeLists.txt",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/ggml/src/ggml-cpu/CMakeLists.txt",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/src/CMakeLists.txt",
+    "/home/user/Claude/openagent/android/app/src/main/cpp/llama/vendor/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/tmp/claude-0/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/tmp/claude-0/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "ggml-cpu::@96d03cab6fb05857ea28": {
+      "artifactName": "ggml-cpu",
+      "abi": "arm64-v8a",
+      "output": "/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a/llama/ggml/src/libggml-cpu.a",
+      "runtimeFiles": []
+    },
+    "oallm::@6890427a1f51a3e7e1df": {
+      "artifactName": "oallm",
+      "abi": "arm64-v8a",
+      "output": "/home/user/Claude/openagent/android/app/build/intermediates/cxx/Release/4q4t1pit/obj/arm64-v8a/liboallm.so",
+      "runtimeFiles": []
+    },
+    "ggml::@96d03cab6fb05857ea28": {
+      "artifactName": "ggml",
+      "abi": "arm64-v8a",
+      "output": "/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a/llama/ggml/src/libggml.a",
+      "runtimeFiles": []
+    },
+    "ggml-base::@96d03cab6fb05857ea28": {
+      "artifactName": "ggml-base",
+      "abi": "arm64-v8a",
+      "output": "/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a/llama/ggml/src/libggml-base.a",
+      "runtimeFiles": []
+    },
+    "llama::@e48e26b3b0ed6be1ceb6": {
+      "artifactName": "llama",
+      "abi": "arm64-v8a",
+      "output": "/home/user/Claude/openagent/android/app/.cxx/Release/4q4t1pit/arm64-v8a/llama/src/libllama.a",
+      "runtimeFiles": []
+    }
+  }
+}

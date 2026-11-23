@@ -508,10 +508,30 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- оффлайн-режим: всё на телефоне ----------
+    var offlineMode by mutableStateOf(store.offlineMode)
+    fun updOffline(v: Boolean) { offlineMode = v; store.offlineMode = v; if (v) { toast = if (Offline.ready(getApplication(), Offline.CHAT)) "Оффлайн-режим: отвечаю на телефоне" else "Загрузите модели: Настройки → Оффлайн-режим"; if (voiceJob?.isActive == true) stopVoice() } else { Offline.unload(Offline.CHAT) } }
+    private var offlineJob: Job? = null
+    private fun sendOffline(t: String) {
+        val app = getApplication<Application>()
+        val hist = messages.filter { it.content.isNotBlank() && (it.role == "user" || it.role == "assistant") && it.toolCalls == null }.takeLast(16).map { it.role to it.content }
+        val temp = Msg(id = -System.nanoTime().coerceAtLeast(1), role = "user", content = t, createdAt = System.currentTimeMillis())
+        freshIds.add(temp.id); messages.add(temp); running = true; partial = ""; statusText = ""
+        offlineJob = viewModelScope.launch {
+            val sb = StringBuilder()
+            val ans = try { Offline.reply(app, t, hist, { statusText = it }) { d -> sb.append(d); partial = sb.toString() } } catch (e: CancellationException) { throw e } catch (e: Throwable) { "Ошибка: ${e.message}" }
+            val m = Msg(id = -System.nanoTime().coerceAtLeast(1), role = "assistant", content = ans, createdAt = System.currentTimeMillis())
+            noAnimIds.add(m.id); messages.add(m); partial = ""; statusText = ""; running = false
+            if (autoSpeak && ans.isNotBlank()) toggleSpeak(m)
+            onTurnDone?.invoke()
+        }
+    }
+
     fun send(text: String, voice: Boolean = false) {
         ensureModel()
         val t = text.trim()
         if ((t.isEmpty() && attachments.isEmpty()) || running) return
+        if (offlineMode) { if (t.isNotEmpty()) sendOffline(t); return }
         // мгновенно показываем сообщение пользователя (без ожидания сервера) — экран не «моргает» пустотой
         val temp = Msg(id = -System.nanoTime().coerceAtLeast(1), role = "user", content = t, attachments = attachments.toList().ifEmpty { null }, createdAt = System.currentTimeMillis())
         freshIds.add(temp.id); messages.add(temp); running = true; partial = ""; statusText = ""
@@ -537,7 +557,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { runCatching { api.setPersona(id, p) }; refreshConvs() }
     }
 
-    fun stopRun() { val id = convId ?: return; viewModelScope.launch { runCatching { api.stop(id) } } }
+    fun stopRun() { if (offlineMode) { Offline.stopRequested = true; Offline.stop(); return }; val id = convId ?: return; viewModelScope.launch { runCatching { api.stop(id) } } }
 
     // ---------- повтор / правка / закрепление / поиск / экспорт ----------
     fun regenerate() {
@@ -882,6 +902,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
     private var voiceJob: Job? = null
 
     fun startVoice() {
+        if (offlineMode) { toast = "Голосовой звонок работает только с интернетом — в оффлайн-режиме пишите текстом"; return }
         if (voiceJob?.isActive != true && needGate()) { if (!gateOpen) requireGate { startVoice() }; return }
         if (serverOld && !oldWarned) { oldWarned = true; toast = "Сервер не обновлён: звонок и распознавание будут медленнее. Запустите ./deploy/deploy.sh" }
         screen = Screen.Voice
