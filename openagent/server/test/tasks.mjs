@@ -67,3 +67,9 @@ export const CODE_STRESS = [
   { id: 's4-git', maxSteps: 6, text: 'Инициализируй git-репозиторий в текущей папке, создай файл a.txt с текстом "v1", сделай коммит "init", затем создай ветку feature и в ней измени a.txt на "v2" и закоммить. Покажи git log --oneline --all.', check: (r, d) => ok(sh(d, 'git log --oneline --all | wc -l').stdout.trim() === '2' && sh(d, 'git branch --list feature').stdout.includes('feature'), 'git-история неверна') },
   { id: 's5-js-tests', maxSteps: 8, setup: (d) => { W(d, 'package.json', '{"name":"t","scripts":{"test":"node --test"}}'); W(d, 'sum.js', 'exports.sum = (a, b) => a - b;\n'); W(d, 'sum.test.js', 'const test = require("node:test"); const assert = require("node:assert"); const { sum } = require("./sum");\ntest("sum", () => { assert.strictEqual(sum(2, 3), 5); });\n'); }, text: 'npm test падает. Почини.', check: (r, d) => ok(sh(d, 'npm test 2>&1').status === 0, 'npm test не проходит') },
 ];
+
+// ---- OpenDesign: сайты через навык opendesign (нужен OPENDESIGN_DIR) ----
+export const CODE_SITES = [
+  { id: 'd1-landing', maxSteps: 14, text: 'Сделай красивый одностраничный лендинг для кофейни «Зерно» в Казани: меню, адрес, часы работы. Только создай файлы, не публикуй.', check: (r, d) => { const h = rd(d, 'index.html'); const css = rd(d, 'style.css') + rd(d, 'tokens.css') + h; return ok(h.length > 1500 && /Зерно/.test(h) && /@media/.test(css) && /--[a-z-]+\s*:/.test(css) && r.tools.some((t) => t.name === 'skill_load' || /opendesign/.test(t.args)), 'нет index.html/адаптива/токенов или навык opendesign не загружался'); } },
+  { id: 'd2-dashboard', maxSteps: 14, text: 'Сделай HTML-дашборд аналитики продаж (KPI-карточки и график) в стиле Stripe. Только файлы, без публикации.', check: (r, d) => ok(fs.readdirSync(d).some((f) => /\.html$/.test(f)) && r.tools.some((t) => /stripe/i.test(t.args) || /design-systems/.test(t.args)), 'нет html или не использована дизайн-система') },
+];

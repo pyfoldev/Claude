@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import { mkUser, mkConv, runOnce, codeDir } from './harness.mjs';
-import { CODE, CHAT, CODE_HARD, CHAT_HARD, CODE_STRESS } from './tasks.mjs';
+import { CODE, CHAT, CODE_HARD, CHAT_HARD, CODE_STRESS, CODE_SITES } from './tasks.mjs';
 const HARD = process.env.HARD === '1';
 const which = process.argv[2] || 'all', only = process.argv[3];
 const user = mkUser();
 const rows = [];
-for (const [mode, list] of (process.env.STRESS === '1' ? [['code', CODE_STRESS]] : [['code', HARD ? CODE_HARD : CODE], ['chat', HARD ? CHAT_HARD : CHAT]])) {
+for (const [mode, list] of (process.env.SITES === '1' ? [['code', CODE_SITES]] : process.env.STRESS === '1' ? [['code', CODE_STRESS]] : [['code', HARD ? CODE_HARD : CODE], ['chat', HARD ? CHAT_HARD : CHAT]])) {
   if (which !== 'all' && which !== mode) continue;
   for (const t of list) {
     if (only && !t.id.includes(only)) continue;

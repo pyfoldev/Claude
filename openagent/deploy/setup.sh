@@ -47,6 +47,13 @@ export ANDROID_SDK_ROOT=$ANDROID_HOME
 export PATH=\$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 EOP
 
+# OpenDesign (дизайн-системы, шаблоны и правила для сайтов; Apache-2.0): агент режима Code берёт их через навык «opendesign»
+OD=/opt/opendesign
+if [ ! -d "$OD/.git" ]; then
+  git clone --depth 1 --filter=blob:none --sparse https://github.com/nexu-io/open-design "$OD" || true
+fi
+if [ -d "$OD/.git" ]; then (cd "$OD" && git sparse-checkout set design-systems design-templates craft && git pull --ff-only -q) || true; fi
+
 # Приложение
 mkdir -p $APP /srv/openagent/data /srv/openagent/workspaces
 rsync -a --delete --exclude node_modules --exclude .env "$SRC/server/" $APP/

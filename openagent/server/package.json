@@ -12,6 +12,8 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.94",
+    "ai": "^7.0.179",
     "better-sqlite3": "^11.7.0",
     "express": "^4.21.2",
     "imapflow": "^2.12.2",
@@ -19,6 +21,8 @@
     "mailparser": "^3.15.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.10.1",
-    "ws": "^8.23.0"
+    "opencode-ai": "1.19.6",
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
   }
 }

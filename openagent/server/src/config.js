@@ -14,6 +14,7 @@ export const config = {
     baseUrl: (env.RIVER_BASE_URL || 'https://api.river.ai/v1').replace(/\/$/, ''),
     apiKey: env.RIVER_API_KEY || '',
     model: env.RIVER_MODEL || 'deepseek-ai/DeepSeek-V4.1-Flash',
+    codeModel: env.RIVER_CODE_MODEL || env.RIVER_MODEL || 'deepseek-ai/DeepSeek-V4.1-Flash',   // модель движка Code (opencode)
     fastModel: env.RIVER_FAST_MODEL || 'deepseek-ai/DeepSeek-V4.1-Flash',
     voiceModel: env.RIVER_VOICE_MODEL || 'deepseek-ai/DeepSeek-V4.1-Flash-1017',   // для звонков: в замерах первое слово на ~350 мс быстрее
     visionModel: env.RIVER_VISION_MODEL || 'deepseek-ai/DeepSeek-V4.1-Flash',

@@ -212,3 +212,5 @@ CREATE TABLE IF NOT EXISTS missions (
 `);
 try { db.exec('ALTER TABLE schedules ADD COLUMN mission_id INTEGER'); } catch {}
 try { db.exec("ALTER TABLE users ADD COLUMN profile TEXT NOT NULL DEFAULT ''"); } catch {}
+
+try { db.exec('ALTER TABLE conversations ADD COLUMN oc_session TEXT'); } catch {}

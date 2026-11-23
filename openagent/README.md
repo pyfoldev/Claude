@@ -5,6 +5,8 @@
 
 | Что | Чем |
 |---|---|
+| Движок Code | **opencode** (`opencode serve`, MIT) — цикл агента, инструменты, сжатие контекста; модели river.ai; инструменты OpenAgent (сайты, файлы, документы, графики, поиск, память) подключены через MCP (`ocMcp.js`). Сайты и интерфейсы — через **OpenDesign** (навык `opendesign`: 150+ дизайн-систем, шаблоны, правила ремесла; ставится в `/opt/opendesign`) |
+| Движок Чат | **Vercel AI SDK** (`ai`) — цикл модель↔инструменты со стримингом; инструменты выполняет OpenAgent |
 | Модель | river.ai (OpenAI-совместимый `/chat/completions`, стриминг, tool calls) |
 | Голосовой режим | **Deepgram Voice Agent**: распознавание `nova-3` + мозг **Claude Haiku 4.5** + голос **Flux «Владимир»** в одном потоке (`/api/voice-agent`); сложное агент делегирует функцией `run_task` полному агенту OpenAgent |
 | Речь → текст | Deepgram (`nova-3`, потоковый WebSocket и файлы) |
@@ -88,3 +90,8 @@ STRESS=1 node --env-file=.env test/run.mjs code                                 
 ENVFILE=.env DATA_DIR=... WORKSPACES_DIR=... node --env-file=.env test/voice.mjs                     # голосовой цикл: Voice Agent + инструменты + реальный аудиопоток
 ```
 Каждая задача проверяется скриптом (файлы/вывод) и лимитом шагов — видно, где агент делает лишнее.
+
+## Движки
+- Code: `CODE_ENGINE=legacy` возвращает встроенный цикл; без opencode/для не-владельцев работает встроенный. Модель Code — `RIVER_CODE_MODEL`. Каталог OpenDesign — `OPENDESIGN_DIR` (по умолчанию `/opt/opendesign`, ставит `deploy/setup.sh`).
+- Чат: `CHAT_ENGINE=legacy` — встроенный цикл. При сбое запуска движка до первого вывода агент автоматически переключается на встроенный.
+- Тесты сайтов: `SITES=1 OPENDESIGN_DIR=... node --env-file=.env test/run.mjs code`.

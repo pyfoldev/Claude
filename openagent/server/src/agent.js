@@ -16,6 +16,8 @@ import { extractText, DOC_EXT } from './extract.js';
 import { AUDIO_EXT } from './transcribe.js';
 import { pplxAgent } from './perplexity.js';
 import { snapshot, snapshotAsync } from './checkpoints.js';
+import { runChatAI, chatEngineOn } from './chatEngine.js';
+import { runOpencode, engineAvailable, OPENDESIGN_DIR } from './opencodeEngine.js';
 
 // Экономия токенов (всегда включена): короткий промпт, мало шагов, обрезка истории и результатов инструментов.
 // Лимит шагов не должен обрывать работу посреди задачи: страхуют сжатие контекста и защита от зацикливания, жёсткий предел — высокий.
@@ -381,7 +383,123 @@ export function startRun(user, conv, text, attachments, opts = {}) {
       const maxTokens = voice ? MAXTOK.voice : conv.mode === 'code' || heavy ? MAXTOK.code : MAXTOK.chat;
       const startedAt = userRow.id;
 
-      for (let step = 0; step < MAX_STEPS; step++) {
+      let ended = false; let step = 0;
+      const delegate = async (task) => {
+        const skip = new Set(['delegate', 'ask_user', 'todo_write', 'schedule_create', 'schedule_list', 'schedule_delete']);
+        const subTools = toolDefs(user, conv.mode, { automation, text: task }).filter((t) => !skip.has(t.function.name));
+        const msgs = [{ role: 'system', content: `Ты под-агент OpenAgent. Выполни порученную задачу самостоятельно и верни краткий точный итог (факты, пути, выводы, ссылки). Рабочая папка: ${cwd}.` }, { role: 'user', content: task }];
+        for (let i = 0; i < 20; i++) {
+          const r = await chatStream({ prov, model, messages: msgs, tools: subTools, signal: ac.signal, maxTokens: 2500, onUsage: (u) => { usageAcc.prompt += u.prompt_tokens || 0; usageAcc.completion += u.completion_tokens || 0; usageAcc.calls++; } });
+          msgs.push({ role: 'assistant', content: r.content || null, ...(r.tool_calls.length ? { tool_calls: r.tool_calls } : {}) });
+          if (!r.tool_calls.length) return r.content || '(пусто)';
+          for (const c of r.tool_calls) {
+            let a = {}; try { a = JSON.parse(c.function.arguments || '{}'); } catch {}
+            const out = await runTool(user, c.function.name, a, { signal: ac.signal, cwd, automation, autonomy, attach: () => {} });
+            msgs.push({ role: 'tool', tool_call_id: c.id, content: String(out).slice(0, 6000) });
+          }
+        }
+        return 'Под-агент не уложился в лимит шагов';
+      };
+      const PAR = new Set(['web_search', 'web_fetch', 'read_file', 'list_dir', 'memory_search', 'grep', 'glob', 'http_request', 'delegate']);
+      const seen = (run.seen ||= new Map());
+      const counters = (run.counters ||= { search: 0, bashRead: 0 });
+      const execOne = async (call) => {
+        let args = {};
+        try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
+        const sig = call.function.name + call.function.arguments;
+        const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
+        if (call.function.name === 'web_search' && ++counters.search > (effort === 'high' || /подробн|глубок|исследу|разбер|сравни|обзор|все источники|deep|research/i.test(text || '') ? 8 : 3)) return { call, result: 'Поисков уже достаточно — ответь по найденному (если чего-то не хватает, скажи об этом честно).', files: [] };
+        if (n >= 3 && !['bash', 'process'].includes(call.function.name)) return { call, result: 'Этот же вызов уже выполнялся несколько раз с тем же результатом. Смени подход или заверши ответом.', files: [] };
+        let lastEmit = 0, pending = '';
+        const files = [];
+        if (snapP) await snapP;                                // контрольная точка «до» должна быть готова раньше первого изменения
+        const result = await runTool(user, call.function.name, args, {
+          signal: ac.signal, cwd, delegate, automation, autonomy, userText: text, searchProvider: opts.search, phone: (a) => phoneCall(user.id, emit, a), endTurn: () => { ended = true; },
+          attach: (f) => files.push(f),
+          onOutput: (s) => {
+            pending += s;
+            if (Date.now() - lastEmit > 200) { emit('tool_output', { id: call.id, text: pending }); pending = ''; lastEmit = Date.now(); }
+          },
+        });
+        if (pending) emit('tool_output', { id: call.id, text: pending });
+        const hint = call.function.name === 'bash' && /^\s*(cat|head|tail|ls|find|grep|rg|wc)\s/.test(String(args.command || '')) && !/[|;&]/.test(String(args.command || '')) && ++counters.bashRead <= 2 ? '\n[Совет: для чтения/поиска есть read_file, list_dir, grep, glob — быстрее и без терминала]' : '';
+        if (/^Ошибка|\[exit [1-9]/.test(String(result))) counters.errStreak = (counters.errStreak || 0) + 1; else counters.errStreak = 0;
+        const stuck = counters.errStreak >= 5 ? '\n[Уже 5 неудач подряд: остановись, разбери причину иначе или честно расскажи пользователю, что мешает.]' : '';
+        const left = MAX_STEPS - 1 - step;
+        const budget = left <= 3 && step > 30 ? `\n[Осталось шагов: ${left} — заверши работу и дай итог]` : '';
+        return { call, result: (hint || budget || stuck) ? String(result) + hint + budget + stuck : result, files };
+      };
+      const finish = ({ call, result, files }) => {
+        const tRow = insertMsg(conv.id, {
+          role: 'tool', content: result, tool_call_id: call.id, tool_name: call.function.name,
+          attachments: files.length ? files.map((f) => ({ ...f, path: undefined })) : null,
+        });
+        emit('message', { message: publicMessage(tRow) });
+        if (files.length) {
+          const aRow2 = insertMsg(conv.id, { role: 'assistant', content: '', attachments: files.map((f) => ({ ...f, path: undefined })) });
+          emit('message', { message: publicMessage(aRow2) });
+        }
+      };
+
+      // ---- Code: движок opencode (владелец, не автоматизация). Любой сбой запуска движка → прежний цикл ниже. ----
+      let useOc = conv.mode === 'code' && user.role === 'owner' && !automation && prov.id === 'river' && engineAvailable();
+      if (useOc) {
+        try {
+          const ocModel = model && config.river.allowed.includes(model) && opts.model ? model : config.river.codeModel;
+          const sys = [
+            `Ты — OpenAgent (режим CODE): автономный инженер на сервере владельца. Папка проекта: ${cwd}${project ? ` (проект «${project.name}»)` : ''}; файлы пользователя: ${ws}/uploads. Пиши и отвечай на языке пользователя, кратко.`,
+            'Экономь шаги: известный путь читай/правь сразу (без ls/glob «на разведку»), после записи файла не перечитывай его, команды объединяй (a && b), простая задача = 1–3 шага. Вопрос о содержимом файлов или системы — сначала прочитай/выполни, не угадывай. Если запрос непонятен без уточнения — сразу один короткий вопрос через oa_ask_user (с вариантами), без разведки.',
+            'Доводи задачу до конца без лишних вопросов; ограничения пользователя («только локально», «не публикуй») главнее всего. Не запускай постоянные процессы/боты/cron и не делай git push без прямой просьбы.',
+            'Файл или картинку, которые нужно показать пользователю, отправляй инструментом oa_send_file (абсолютный путь). Публикация сайта — oa_deploy_site только по прямой просьбе. Графики/документы/картинки — инструменты oa_chart, oa_create_file, oa_generate_image и др.',
+            fs.existsSync(path.join(OPENDESIGN_DIR(), 'design-systems')) ? 'Любая работа над внешним видом сайта, лендинга, дашборда, веб-интерфейса или презентации: сначала загрузи навык «opendesign» (skill) и следуй ему.' : '',
+            user.instructions ? `Инструкции пользователя: ${String(user.instructions).slice(0, 600)}` : '',
+            memBlock ? `Что известно о пользователе:
+${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
+          ].filter(Boolean).join('\n');
+          if (snapP) await snapP;
+          const addRow = (m) => { const r = insertMsg(conv.id, m); emit('message', { message: publicMessage(r) }); return r; };
+          await runOpencode({ user, conv, cwd, text: (typeof attachmentsToContent(user, text, attachments, false) === 'string' ? attachmentsToContent(user, text, attachments, false) : text), model: ocModel, system: sys, signal: ac.signal, cb: {
+            delta: (d) => { if (!run.partial) emit('status', { text: '' }); run.partial += d; emit('delta', { text: d }); },
+            status: (t) => emit('status', { text: t }),
+            toolOutput: (id, t) => emit('tool_output', { id, text: t }),
+            usage: (u) => { usageAcc.prompt += u.prompt_tokens || 0; usageAcc.completion += u.completion_tokens || 0; usageAcc.cached += u.prompt_tokens_details?.cached_tokens || 0; usageAcc.calls++; },
+            assistant: (content, call) => { run.partial = ''; if (!content && !call) return; addRow({ role: 'assistant', content, tool_calls: call ? [{ id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } }] : null }); },
+            tool: (id, name, content, files) => {
+              addRow({ role: 'tool', content: clip(String(content), 6000), tool_call_id: id, tool_name: name, attachments: files.length ? files.map((f) => ({ ...f, path: undefined })) : null });
+              if (files.length) addRow({ role: 'assistant', content: '', attachments: files.map((f) => ({ ...f, path: undefined })) });
+            },
+          } });
+        } catch (e) {
+          if (ac.signal.aborted) throw e;
+          console.error('opencode engine failed, fallback to legacy loop:', e.message);
+          if (run.partial || db.prepare("SELECT 1 FROM messages WHERE conv_id=? AND id>? AND role!='user' LIMIT 1").get(conv.id, userRow.id)) throw e;   // уже что-то показано — не дублируем работу
+          useOc = false; emit('status', { text: 'Движок opencode недоступен — работаю встроенным агентом' });
+        }
+      }
+      // ---- Чат: движок Vercel AI SDK (цикл модель↔инструменты), выполнение инструментов — наше (execOne). Сбой до первого вывода → прежний цикл. ----
+      let useAI = !useOc && conv.mode !== 'code' && !voice && prov.id !== 'perplexity' && chatEngineOn();
+      if (useAI) {
+        try {
+          const hist0 = db.prepare('SELECT * FROM messages WHERE conv_id=? AND id>? ORDER BY id').all(conv.id, conv.summarized_upto).filter((r) => !(r.role === 'assistant' && !r.content && !r.tool_calls));
+          const all = buildMessages(user, conv.id, sysFn, hist0, isVision);
+          const addRow = (m) => { const r = insertMsg(conv.id, m); emit('message', { message: publicMessage(r) }); return r; };
+          await runChatAI({ prov, model, system: all[0].content, messages: all.slice(1), toolDefs: tools, signal: ac.signal, maxSteps: MAX_STEPS, maxTokens, effort,
+            execTool: async (call) => { const r = await execOne(call); step++; return r; }, shouldStop: () => ended,
+            cb: {
+              delta: (d) => { if (!run.partial) emit('status', { text: '' }); run.partial += d; emit('delta', { text: d }); },
+              usage: (u) => { usageAcc.prompt += u.prompt_tokens || 0; usageAcc.completion += u.completion_tokens || 0; usageAcc.cached += u.prompt_tokens_details?.cached_tokens || 0; usageAcc.calls++; },
+              assistant: (content, calls) => { run.partial = ''; addRow({ role: 'assistant', content, tool_calls: calls.length ? calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) : null }); },
+              tool: (id, name, content, files) => finish({ call: { id, function: { name } }, result: content, files }),
+            } });
+        } catch (e) {
+          if (ac.signal.aborted) throw e;
+          console.error('chat engine failed:', e.message);
+          const shown = run.partial || db.prepare("SELECT 1 FROM messages WHERE conv_id=? AND id>? AND role!='user' LIMIT 1").get(conv.id, userRow.id);
+          if (shown) throw e;
+          useAI = false; emit('status', { text: 'Переключаюсь на встроенный движок…' });
+        }
+      }
+      for (step = 0; !useOc && !useAI && step < MAX_STEPS; step++) {
         const hist = db.prepare('SELECT * FROM messages WHERE conv_id=? AND id>? ORDER BY id').all(conv.id, conv.summarized_upto)
           .filter((r) => !(r.role === 'assistant' && !r.content && !r.tool_calls));
         const messages = buildMessages(user, conv.id, sysFn, hist, isVision);
@@ -408,63 +526,7 @@ export function startRun(user, conv, text, attachments, opts = {}) {
         emit('message', { message: publicMessage(aRow) });
         if (!tool_calls.length) break;
 
-        let ended = false;
-        const delegate = async (task) => {
-          const skip = new Set(['delegate', 'ask_user', 'todo_write', 'schedule_create', 'schedule_list', 'schedule_delete']);
-          const subTools = toolDefs(user, conv.mode, { automation, text: task }).filter((t) => !skip.has(t.function.name));
-          const msgs = [{ role: 'system', content: `Ты под-агент OpenAgent. Выполни порученную задачу самостоятельно и верни краткий точный итог (факты, пути, выводы, ссылки). Рабочая папка: ${cwd}.` }, { role: 'user', content: task }];
-          for (let i = 0; i < 20; i++) {
-            const r = await chatStream({ prov, model, messages: msgs, tools: subTools, signal: ac.signal, maxTokens: 2500, onUsage: (u) => { usageAcc.prompt += u.prompt_tokens || 0; usageAcc.completion += u.completion_tokens || 0; usageAcc.calls++; } });
-            msgs.push({ role: 'assistant', content: r.content || null, ...(r.tool_calls.length ? { tool_calls: r.tool_calls } : {}) });
-            if (!r.tool_calls.length) return r.content || '(пусто)';
-            for (const c of r.tool_calls) {
-              let a = {}; try { a = JSON.parse(c.function.arguments || '{}'); } catch {}
-              const out = await runTool(user, c.function.name, a, { signal: ac.signal, cwd, automation, autonomy, attach: () => {} });
-              msgs.push({ role: 'tool', tool_call_id: c.id, content: String(out).slice(0, 6000) });
-            }
-          }
-          return 'Под-агент не уложился в лимит шагов';
-        };
-        const PAR = new Set(['web_search', 'web_fetch', 'read_file', 'list_dir', 'memory_search', 'grep', 'glob', 'http_request', 'delegate']);
-        const seen = (run.seen ||= new Map());
-        const counters = (run.counters ||= { search: 0, bashRead: 0 });
-        const execOne = async (call) => {
-          let args = {};
-          try { args = JSON.parse(call.function.arguments || '{}'); } catch {}
-          const sig = call.function.name + call.function.arguments;
-          const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
-          if (call.function.name === 'web_search' && ++counters.search > (effort === 'high' || /подробн|глубок|исследу|разбер|сравни|обзор|все источники|deep|research/i.test(text || '') ? 8 : 3)) return { call, result: 'Поисков уже достаточно — ответь по найденному (если чего-то не хватает, скажи об этом честно).', files: [] };
-          if (n >= 3 && !['bash', 'process'].includes(call.function.name)) return { call, result: 'Этот же вызов уже выполнялся несколько раз с тем же результатом. Смени подход или заверши ответом.', files: [] };
-          let lastEmit = 0, pending = '';
-          const files = [];
-          if (snapP) await snapP;                                // контрольная точка «до» должна быть готова раньше первого изменения
-          const result = await runTool(user, call.function.name, args, {
-            signal: ac.signal, cwd, delegate, automation, autonomy, userText: text, searchProvider: opts.search, phone: (a) => phoneCall(user.id, emit, a), endTurn: () => { ended = true; },
-            attach: (f) => files.push(f),
-            onOutput: (s) => {
-              pending += s;
-              if (Date.now() - lastEmit > 200) { emit('tool_output', { id: call.id, text: pending }); pending = ''; lastEmit = Date.now(); }
-            },
-          });
-          if (pending) emit('tool_output', { id: call.id, text: pending });
-          const hint = call.function.name === 'bash' && /^\s*(cat|head|tail|ls|find|grep|rg|wc)\s/.test(String(args.command || '')) && !/[|;&]/.test(String(args.command || '')) && ++counters.bashRead <= 2 ? '\n[Совет: для чтения/поиска есть read_file, list_dir, grep, glob — быстрее и без терминала]' : '';
-          if (/^Ошибка|\[exit [1-9]/.test(String(result))) counters.errStreak = (counters.errStreak || 0) + 1; else counters.errStreak = 0;
-          const stuck = counters.errStreak >= 5 ? '\n[Уже 5 неудач подряд: остановись, разбери причину иначе или честно расскажи пользователю, что мешает.]' : '';
-          const left = MAX_STEPS - 1 - step;
-          const budget = left <= 3 && step > 30 ? `\n[Осталось шагов: ${left} — заверши работу и дай итог]` : '';
-          return { call, result: (hint || budget || stuck) ? String(result) + hint + budget + stuck : result, files };
-        };
-        const finish = ({ call, result, files }) => {
-          const tRow = insertMsg(conv.id, {
-            role: 'tool', content: result, tool_call_id: call.id, tool_name: call.function.name,
-            attachments: files.length ? files.map((f) => ({ ...f, path: undefined })) : null,
-          });
-          emit('message', { message: publicMessage(tRow) });
-          if (files.length) {
-            const aRow2 = insertMsg(conv.id, { role: 'assistant', content: '', attachments: files.map((f) => ({ ...f, path: undefined })) });
-            emit('message', { message: publicMessage(aRow2) });
-          }
-        };
+        ended = false;
         if (tool_calls.length > 1 && tool_calls.every((c) => PAR.has(c.function.name))) {
           (await Promise.all(tool_calls.map(execOne))).forEach(finish);
         } else {
