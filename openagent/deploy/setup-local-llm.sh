@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Локальная модель Qwen3.5-2B на сервере без GPU (llama.cpp, Q4_K_M + зрение mmproj): обычный чат, документы, анализ фото.
-# Запускать на сервере от root: bash setup-local-llm.sh   (после основного setup.sh). Нужно ~3 ГБ диска и ~3 ГБ свободной ОЗУ.
+# Локальная модель Qwen3.5-2B на сервере без GPU (llama.cpp, Q4_K_M): ТОЛЬКО болтовня (короткий промпт, без инструментов). Код, документы, фото, поиск — облако.
+# Запускать на сервере от root: bash setup-local-llm.sh   (после основного setup.sh). Нужно ~2 ГБ диска и ~2 ГБ свободной ОЗУ.
 set -euo pipefail
 APP=/opt/openagent; DIR=/opt/llm; mkdir -p "$DIR"; cd "$DIR"
-REPO="unsloth/Qwen3.5-2B-GGUF"; QUANT="${QUANT:-Qwen3.5-2B-Q4_K_M.gguf}"; MMPROJ="${MMPROJ:-mmproj-F16.gguf}"
+REPO="unsloth/Qwen3.5-2B-GGUF"; QUANT="${QUANT:-Qwen3.5-2B-Q4_K_M.gguf}"
 
 # 1) llama.cpp (готовая сборка из релизов; если не нашлась — сборка из исходников)
 if [ ! -x "$DIR/llama/llama-server" ]; then
@@ -22,7 +22,6 @@ chmod +x "$DIR/llama/llama-server"
 
 # 2) веса (скачиваются один раз; докачка при обрыве)
 [ -f "$QUANT" ]  || curl -fL -C - "https://huggingface.co/$REPO/resolve/main/$QUANT" -o "$QUANT"
-[ -f "$MMPROJ" ] || curl -fL -C - "https://huggingface.co/$REPO/resolve/main/$MMPROJ" -o "$MMPROJ"
 
 # 3) сервис
 cat > /etc/systemd/system/openagent-llm.service <<EOP
@@ -33,7 +32,7 @@ After=network-online.target
 [Service]
 WorkingDirectory=$DIR
 Environment=LD_LIBRARY_PATH=$DIR/llama
-ExecStart=$DIR/llama/llama-server -m $DIR/$QUANT --mmproj $DIR/$MMPROJ --host 127.0.0.1 --port 8080 --alias qwen3.5-2b -c 16384 -t $(nproc) --parallel 1 --jinja --chat-template-kwargs '{"enable_thinking":false}'
+ExecStart=$DIR/llama/llama-server -m $DIR/$QUANT --host 127.0.0.1 --port 8080 --alias qwen3.5-2b -c 4096 -t $(nproc) --parallel 1 --jinja --chat-template-kwargs '{"enable_thinking":false}'
 Restart=always
 RestartSec=3
 Nice=5
@@ -44,6 +43,6 @@ EOP
 systemctl daemon-reload && systemctl enable --now openagent-llm
 
 # 4) подключение к OpenAgent
-grep -q '^LOCAL_LLM_URL=' $APP/.env || printf '\n# Локальная модель (Qwen3.5-2B): чат, документы, фото. Code остаётся на river.ai\nLOCAL_LLM_URL=http://127.0.0.1:8080/v1\nLOCAL_LLM_MODEL=qwen3.5-2b\nLOCAL_LLM_VISION=1\n' >> $APP/.env
+grep -q '^LOCAL_LLM_URL=' $APP/.env || printf '\n# Локальная модель (Qwen3.5-2B): только болтовня. Остальное — облако\nLOCAL_LLM_URL=http://127.0.0.1:8080/v1\nLOCAL_LLM_MODEL=qwen3.5-2b\n' >> $APP/.env
 systemctl restart openagent
 echo "Готово. Проверка: curl -s localhost:8080/health ; журнал: journalctl -u openagent-llm -f"

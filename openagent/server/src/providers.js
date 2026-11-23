@@ -19,7 +19,6 @@ const groqModels = () => (process.env.GROQ_MODELS || 'openai/gpt-oss-120b').spli
 // Локальная модель на сервере (llama.cpp `llama-server`, OpenAI-совместимый /v1): Qwen3.5-2B для обычного чата, документов и анализа фото. Включается LOCAL_LLM_URL.
 const LOCAL = { id: 'local', name: 'Локальная (Qwen3.5-2B)', baseUrl: (process.env.LOCAL_LLM_URL || '').replace(/\/$/, '') };
 export const localModel = () => process.env.LOCAL_LLM_MODEL || 'qwen3.5-2b';
-export const localVision = () => process.env.LOCAL_LLM_VISION !== '0';
 let _localUp = false, _localAt = 0;
 /** Сервер локальной модели жив? (кэш на 15 с, обновляется в фоне — вызов не блокирует). */
 export function localUp() {
