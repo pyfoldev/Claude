@@ -114,6 +114,10 @@ const ON_RE = /включ|вруб|актив|запуст|зажг|засвет
 const stem = (w) => w.slice(0, Math.max(3, Math.min(5, w.length - 2)));
 const hasWord = (text, word) => { const t = norm(text); return word.toLowerCase().split(/\s+/).filter(Boolean).every((w) => /^\d+$/.test(w) ? t.includes(w) : t.split(' ').some((x) => x.startsWith(stem(w)))); };
 
+const KNOWN_APPS = new Set(["2гис", "alice", "avito", "calculator", "calendar", "camera", "chrome", "clock", "contacts", "discord", "duolingo", "facebook", "files", "gallery", "gmail", "google", "instagram", "mail", "maps", "music", "netflix", "notes", "ozon", "phone", "pinterest", "play market", "settings", "skype", "sms", "spotify", "telegram", "tiktok", "twitch", "twitter", "viber", "vk", "whatsapp", "wildberries", "youtube", "zoom", "госуслуги", "дзен", "кинопоиск", "магнит", "пятёрочка", "сбербанк", "тинькофф", "шазам", "яндекс карты", "яндекс музыка", "яндекс такси"]);   // приложения, на которых обучена модель; остальные имена — большой модели
+const TARGET_RE = { wifi: /вай|wi-?fi/, bluetooth: /блют|bluetooth/, airplane: /авиа|полет|самолет/, dnd: /беспокоить|dnd/, autorotate: /поворот/, nfc: /nfc|нфс|нфц/, hotspot: /точк|раздач|раздай|модем|хотспот|hotspot/, location: /геолокац|gps|местоположен|геопозиц/, battery_saver: /экономи|энергосбереж/ };
+const MUSIC_FILLER = new Set(['включи', 'поставь', 'песню', 'песня', 'трек', 'музыку', 'хочу', 'послушать', 'сыграй', 'запусти', 'давай', 'послушаем', 'найди', 'и', 'в', 'через', 'мне', 'пожалуйста', 'плиз', 'быстро', 'сейчас', 'слушай', 'ну', 'эй', 'алиса', 'окей', 'спасибо', 'ладно', 'будь', 'добр', 'спотифай', 'spotify', 'спотифае', 'яндекс', 'музыке', 'музыку', 'ютуб', 'youtube', 'music', 'можешь', 'а', 'ка', 'так', 'короче', 'срочно', 'прямо']);
+
 /** true — действия опираются на то, что реально сказано. */
 export function groundedOk(actions, text) {
   const t = norm(text);
@@ -121,8 +125,15 @@ export function groundedOk(actions, text) {
   for (const a of actions) {
     if (a.action === 'call' && !hasWord(t, a.to)) return false;                                   // кому звонить — только названо в фразе
     if (a.action === 'message' && (!hasWord(t, a.to) || !hasWord(t, a.text.split(' ')[0]))) return false;
-    if (a.action === 'music_play' && !hasWord(t, a.query)) return false;
-    if (a.action === 'open_app' || a.action === 'close_app') { /* canonical-имена (youtube) отличаются от сказанного — проверяется списком приложений на телефоне */ }
+    if (a.action === 'music_play') {
+      if (!hasWord(t, a.query)) return false;
+      const q = new Set(norm(a.query).split(' ').map(stem));      // все «лишние» слова фразы должны войти в запрос (иначе запрос обрезан: «линкин парк» → «парк»)
+      for (const w of t.split(' ')) if (!MUSIC_FILLER.has(w) && !q.has(stem(w))) return false;
+    }
+    if (a.action === 'toggle' && TARGET_RE[a.target] && !TARGET_RE[a.target].test(t)) return false;   // «раздай интернет» ≠ вайфай
+    if ((a.action === 'open_app' || a.action === 'close_app') && !KNOWN_APPS.has(String(a.app).toLowerCase())) return false;   // выдуманное/обрезанное имя приложения
+    if (a.action === 'volume' && !/громк|звук|тише|громче/.test(t)) return false;
+    if (a.action === 'brightness' && !/яркост|ярче|темнее/.test(t)) return false;
     if ('on' in a && (a.action === 'toggle' || a.action === 'flashlight')) {   // включить/выключить — направление должно совпасть с глаголом
       const off = OFF_RE.test(t), on = ON_RE.test(t) || /(^| )(вкл)( |$)/.test(t);
       if (off && !on && a.on !== false) return false;

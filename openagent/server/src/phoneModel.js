@@ -39,7 +39,9 @@ export function validateAction(a) {
 
 const PROMPT = (t) => `<|im_start|>user\n${t}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`;
 const modelPath = () => process.env.PHONE_MODEL_PATH || path.resolve(config.dataDir, 'models', 'phone.gguf');
-export const phoneModelEnabled = () => process.env.PHONE_MODEL !== '0' && fs.existsSync(modelPath());
+const URL_ = () => process.env.PHONE_MODEL_URL || '';   // сервис phone-model/serve_ct2.py (CTranslate2 int8) — основной вариант
+let downUntil = 0;
+export const phoneModelEnabled = () => process.env.PHONE_MODEL !== '0' && Date.now() > downUntil && (!!URL_() || fs.existsSync(modelPath()));
 
 let ready = null, llama = null, model = null, ctx = null, seq = null, grammar = null, chain = Promise.resolve();
 async function load() {
@@ -57,10 +59,16 @@ async function load() {
 export function phoneFast(text) {
   const run = async () => {
     const t0 = Date.now();
-    const C = await (ready ||= load());
-    const comp = new C({ contextSequence: seq });
-    seq.clearHistory?.();
-    const out = await comp.generateCompletion(PROMPT(String(text).slice(0, 300)), { maxTokens: 120, temperature: 0, grammar, stopOnAbortSignal: false });
+    let out;
+    if (URL_()) {
+      const r = await fetch(URL_(), { method: 'POST', body: JSON.stringify({ text: String(text).slice(0, 300) }), signal: AbortSignal.timeout(6000) });
+      out = (await r.json()).out || '';
+    } else {
+      const C = await (ready ||= load());
+      const comp = new C({ contextSequence: seq });
+      seq.clearHistory?.();
+      out = await comp.generateCompletion(PROMPT(String(text).slice(0, 300)), { maxTokens: 120, temperature: 0, grammar, stopOnAbortSignal: false });
+    }
     let acts; try { acts = JSON.parse(out.trim()); } catch { return null; }
     if (!Array.isArray(acts) || !acts.length) return null;
     for (const a of acts) { const e = validateAction(a); if (e) return null; }
@@ -68,5 +76,5 @@ export function phoneFast(text) {
     return { actions: acts, ms: Date.now() - t0 };
   };
   const p = chain.then(run, run); chain = p.catch(() => {});
-  return p.catch((e) => { console.error('phoneFast:', e.message); return null; });
+  return p.catch((e) => { console.error('phoneFast:', e.message); downUntil = Date.now() + 60000; return null; });   // сервис недоступен — минуту идём к большой модели
 }
