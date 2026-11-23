@@ -16,6 +16,7 @@ import { extractText, DOC_EXT } from './extract.js';
 import { AUDIO_EXT } from './transcribe.js';
 import { pplxAgent } from './perplexity.js';
 import { snapshot, snapshotAsync } from './checkpoints.js';
+import { phoneFast, phoneModelEnabled } from './phoneModel.js';
 import { runChatAI, chatEngineOn } from './chatEngine.js';
 import { runOpencode, engineAvailable, OPENDESIGN_DIR } from './opencodeEngine.js';
 
@@ -353,6 +354,25 @@ export function startRun(user, conv, text, attachments, opts = {}) {
         emit('done');
         postProcess(user, conv.id, userRow.id);
         return;
+      }
+      // ---- Быстрый путь: маленькая локальная модель превращает простую команду телефону в действия за доли секунды; непонятное → обычный агент ----
+      if (!voice && !automation && !attachments?.length && String(text || '').length < 220 && phoneModelEnabled()) {
+        const fast = await phoneFast(text);
+        if (fast) {
+          const results = [];
+          for (const a of fast.actions) results.push(String(await runTool(user, 'phone', a, { signal: ac.signal, cwd: workspaceOf(user.id), autonomy, userText: text, phone: (x) => phoneCall(user.id, emit, x), attach() {}, onOutput() {}, endTurn() {} })));
+          const bad = results.some((r) => /^(Нет ответа от телефона|Нужно подтверждение|Ошибка|Управление телефоном недоступно|Нужна служба доступности|Нужно разрешение)/.test(r));
+          if (!bad) {
+            const calls = fast.actions.map((a, i) => ({ id: `fast_${Date.now()}_${i}`, type: 'function', function: { name: 'phone', arguments: JSON.stringify(a) } }));
+            const addRow = (m) => { const r = insertMsg(conv.id, m); emit('message', { message: publicMessage(r) }); };
+            addRow({ role: 'assistant', content: '', tool_calls: calls });
+            calls.forEach((c, i) => addRow({ role: 'tool', content: results[i], tool_call_id: c.id, tool_name: 'phone' }));
+            addRow({ role: 'assistant', content: results.map((r) => r.replace(/\s+$/, '').replace(/\.$/, '')).join('. ') + '.' });
+            usageAcc.calls += 0;
+            emit('done'); postProcess(user, conv.id, userRow.id);
+            return;
+          }
+        }
       }
       const project = conv.project_id ? db.prepare('SELECT * FROM projects WHERE id=? AND user_id=?').get(conv.project_id, user.id) : null;
       const cwd = cwdFor(user, conv, project);
