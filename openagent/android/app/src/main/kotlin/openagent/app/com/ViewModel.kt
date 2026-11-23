@@ -876,20 +876,40 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         }
     }
     // ---- голосовой агент: Deepgram Voice Agent (Claude Haiku 4.5 + голос «Владимир»); если сервер/ключ не поддерживает — прежний режим ----
+    // ---- камера и переводчик в звонке ----
+    var cameraOn by mutableStateOf(false)
+    var cameraFront by mutableStateOf(false)
+    var translateTo by mutableStateOf("")            // "" — обычный режим; "en", "es", "fr", "de", "it", "nl", "ja" — синхронный перевод русский ↔ язык
+    /** Меняет режим перевода; идущий звонок перезапускается с новым режимом. */
+    fun setTranslate(to: String) {
+        if (translateTo == to) return
+        translateTo = to
+        if (voiceJob?.isActive == true) { runCatching { agentSession?.cancel() }; agentSession = null; voiceJob?.cancel(); voiceJob = null; startVoice() }
+    }
+    private suspend fun cameraFrame(): String {
+        val f = CallCamera.takeFrame(getApplication()) ?: return "Камера в звонке выключена или не готова. Скажи пользователю включить камеру кнопкой в окне звонка."
+        val up = api.upload(f.name, "image/jpeg", f.asRequestBody("image/jpeg".toMediaType()))
+        return "screenshot:${up.id}"
+    }
     private var agentFailed = false
     private val agentVoiceOk get() = !agentFailed && health?.features?.contains("voice-agent") == true
     @Volatile private var agentSession: AgentVoiceSession? = null
     private suspend fun agentVoiceLoop() {
         val lang = if (sttLang == "auto") "ru" else sttLang
         voiceState = VoiceState.Idle; voiceCaption = ""; voiceReply = ""
-        val s = AgentVoiceSession(api.voiceAgentSocket(lang), api.wsClient,
+        val s = AgentVoiceSession(api.voiceAgentSocket(lang, translateTo), api.wsClient,
             onState = { voiceState = it },
             onUser = { voiceCaption = it; voiceReply = "" },
             onAgent = { voiceReply = it },
             onLevel = { if (voiceState == VoiceState.Listening) voiceLevel = it },
             onPhone = { id, args -> viewModelScope.launch {
                 val a = kotlinx.serialization.json.Json.parseToJsonElement(args.toString()) as kotlinx.serialization.json.JsonObject
-                val res = withContext(Dispatchers.Default) { PhoneControl.run(getApplication(), a) }
+                val act = (a["action"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                val res = when (act) {
+                    "screen" -> runCatching { grabScreen() }.getOrElse { "Не удалось сделать снимок экрана: ${it.message}" }
+                    "camera_frame" -> runCatching { cameraFrame() }.getOrElse { "Не удалось снять кадр: ${it.message}" }
+                    else -> withContext(Dispatchers.Default) { PhoneControl.run(getApplication(), a) }
+                }
                 agentSession?.phoneResult(id, res)
             } },
             onStatus = { statusText = it },
@@ -930,7 +950,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         runCatching { agentSession?.cancel() }; agentSession = null
         if (wasActive && running) stopRun()
         onTurnText = null; onTurnDone = null; typedVoiceText = null
-        voiceState = VoiceState.Idle; voiceLevel = 0f; voiceCaption = ""; voiceReply = ""; voiceMuted = false
+        voiceState = VoiceState.Idle; voiceLevel = 0f; voiceCaption = ""; voiceReply = ""; voiceMuted = false; cameraOn = false
         if (screen == Screen.Voice) screen = Screen.Chat
     }
 

@@ -13,8 +13,8 @@ android {
         applicationId = "openagent.app.com"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0"
+        versionCode = 4
+        versionName = "4.0"
         // Адрес вашего сервера и Web client ID для входа через Google (из google-services.json)
         buildConfigField("String", "SERVER_URL", "\"https://openagents.duckdns.org\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"199268040211-o81u4shtd4trbemiorddnjs3jm7acd9g.apps.googleusercontent.com\"")
@@ -73,6 +73,9 @@ dependencies {
     implementation("io.coil-kt:coil-svg:2.7.0")
     implementation("com.caverock:androidsvg-aar:1.4")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.camera:camera-camera2:1.4.1")
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+    implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")

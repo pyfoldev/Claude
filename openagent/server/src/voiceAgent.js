@@ -16,6 +16,10 @@ const DG_AGENT = 'wss://agent.deepgram.com/v1/agent/converse';
 const MAX_SESSION_MS = 30 * 60 * 1000;
 const FAST_TOOLS = ['web_search', 'lookup', 'calculate', 'phone', 'tasks', 'memory_save'];   // выполняются прямо на сервере, ~1 с
 
+// Синхронный перевод: русский ↔ язык собеседника. Голос меняется по языку сказанного (кириллица → голос целевого языка, иначе → русский «Владимир»).
+export const TR_VOICES = { en: ['English', 'aura-2-thalia-en'], es: ['Spanish', 'aura-2-celeste-es'], fr: ['French', 'aura-2-agathe-fr'], de: ['German', 'aura-2-julius-de'], it: ['Italian', 'aura-2-livia-it'], nl: ['Dutch', 'aura-2-rhea-nl'], ja: ['Japanese', 'aura-2-fujin-ja'] };
+const trPrompt = (to) => `Ты — синхронный переводчик между русским и ${TR_VOICES[to][0]}. Всё, что говорит собеседник, ты ТОЛЬКО переводишь: русскую речь — на ${TR_VOICES[to][0]}, речь на ${TR_VOICES[to][0]} — на русский. Никаких пояснений, приветствий, оценок и ответов от себя; вопросы не отвечай, а переводи. Сохраняй смысл, тон и имена; числа и названия произноси естественно. Если реплика непонятна — переведи как расслышал. Без markdown и эмодзи.`;
+
 const clean = (s) => String(s || '').replace(/[*_`#>]+/g, '').replace(/\s+/g, ' ').trim();   // на случай, если модель всё же отдаст markdown
 
 export function voicePrompt(user, mems) {
@@ -25,6 +29,7 @@ export function voicePrompt(user, mems) {
     'Ты — OpenAgent, голосовой личный агент. Это живой телефонный разговор: твои слова зачитывают вслух голосом.',
     'СТИЛЬ: 1–2 коротких предложения, по-человечески, на языке собеседника. Без markdown, списков, эмодзи, ссылок, адресов и кода — всё это нельзя произнести. Числа и единицы пиши так, как их говорят. Не начинай с «конечно» и «хорошо». Не повторяй вопрос.',
     'ДЕЙСТВУЙ САМ: если понятно, что нужно, — делай, не переспрашивай очевидное. Уточняй только когда без ответа нельзя действовать, и ровно одним вопросом.',
+    'ЗРЕНИЕ: «что на экране», «прочитай с экрана», «что это» (камера) — функция look (target screen или camera) с вопросом пользователя; сам ничего не угадывай.',
     'ИНСТРУМЕНТЫ: быстрые — web_search (свежие факты), lookup (погода/курсы/википедия/адреса), calculate, phone (будильник, таймер, приложения, фонарик, громкость на телефоне пользователя), tasks (список дел), memory_save (запомнить). Всё сложное и долгое — функция run_task: работа с интернетом в несколько шагов, файлы, документы, графики, код, сервер, почта, расписания. Перед вызовом run_task (и web_search) скажи ОДНУ короткую фразу вроде «Секунду, посмотрю». Не выдумывай факты, цифры, погоду и новости — бери из инструментов. Результат инструмента перескажи кратко и по сути.',
     'Если собеседник перебил — замолчи и слушай. Если не расслышал — переспроси коротко.',
     user.instructions ? `Инструкции пользователя: ${String(user.instructions).slice(0, 500)}` : '',
@@ -34,14 +39,23 @@ export function voicePrompt(user, mems) {
   ].filter(Boolean).join('\n');
 }
 
-export function buildSettings(user, { lang = 'ru', history = [], greeting = '' } = {}) {
+export function buildSettings(user, { lang = 'ru', history = [], greeting = '', translate = '' } = {}) {
   const va = config.voiceAgent;
+  if (translate && TR_VOICES[translate]) {
+    return { type: 'Settings', audio: { input: { encoding: 'linear16', sample_rate: 16000 }, output: { encoding: 'linear16', sample_rate: 24000, container: 'none' } },
+      agent: { listen: { provider: { type: 'deepgram', model: va.listenModel, language: 'multi' } }, think: { provider: { type: va.thinkProvider, model: va.thinkModel, temperature: 0.2 }, prompt: trPrompt(translate) }, speak: { provider: { type: 'deepgram', model: va.speakModel } } } };
+  }
   const mems = (() => { try { return coreMemories(user.id, 5); } catch { return []; } })();
   const fns = FAST_TOOLS.map(voiceFunction).filter(Boolean);
   fns.push({
     name: 'run_task',
     description: 'Поручить задачу полноценному агенту OpenAgent (интернет в несколько шагов, файлы и документы, графики, код, сервер, почта, расписания). Вернёт итог. task — полная самостоятельная формулировка со всеми деталями из разговора. code=true — для работы с файлами проекта/кодом/сервером (только владелец).',
     parameters: { type: 'object', properties: { task: { type: 'string' }, code: { type: 'boolean' } }, required: ['task'] },
+  });
+  fns.push({
+    name: 'look',
+    description: 'Посмотреть и описать: target=screen — что сейчас на экране телефона пользователя; target=camera — что видит камера телефона (в звонке камера должна быть включена кнопкой). question — что именно нужно узнать (например «что написано», «что это за растение», «переведи надпись»). Вызывай, когда просят посмотреть, прочитать с экрана, «что это», «что на экране».',
+    parameters: { type: 'object', properties: { target: { type: 'string', enum: ['screen', 'camera'] }, question: { type: 'string' } }, required: ['target'] },
   });
   const l = String(lang || 'ru').toLowerCase().slice(0, 5);
   const multi = l === 'auto' || l === 'multi';
@@ -76,6 +90,8 @@ export function voiceAgentSession(ws, user, params) {
   const send = (o) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o)); };
   if (!config.deepgram.apiKey || !config.voiceAgent.enabled) { send({ t: 'error', message: 'Голосовой агент недоступен (нет DEEPGRAM_API_KEY)' }); return ws.close(); }
   const lang = params.get('lang') || 'ru';
+  const translate = TR_VOICES[params.get('translate')] ? params.get('translate') : '';
+  let curVoice = config.voiceAgent.speakModel;
   const conv = ensureVoiceConv(user, params.get('conv'), 'Голосовой разговор');
   const history = db.prepare("SELECT role, content FROM messages WHERE conv_id=? AND role IN ('user','assistant') AND content!='' AND tool_calls IS NULL ORDER BY id DESC LIMIT 8").all(conv.id).reverse();
   let taskConv = null;
@@ -101,7 +117,7 @@ export function voiceAgentSession(ws, user, params) {
   const upSend = (o) => { if (up.readyState === WebSocket.OPEN) up.send(JSON.stringify(o)); };
   const close = (why) => { if (closed) return; closed = true; send({ t: 'closed', reason: why || '' }); try { up.close(); } catch {} try { ws.close(); } catch {} clearInterval(keep); clearTimeout(cap); };
 
-  up.on('open', () => upSend(buildSettings(user, { lang, history })));
+  up.on('open', () => upSend(buildSettings(user, { lang, history: translate ? [] : history, translate })));
   up.on('unexpected-response', (_q, res) => {
     res.resume();
     send({ t: 'error', message: res.statusCode === 401 || res.statusCode === 403 ? 'Deepgram: неверный ключ или нет доступа к Voice Agent' : res.statusCode === 402 ? 'Deepgram: закончился баланс' : `Deepgram Voice Agent: HTTP ${res.statusCode}` });
@@ -119,6 +135,10 @@ export function voiceAgentSession(ws, user, params) {
       const ALIAS = { open: 'open_app', launch: 'open_app', send_message: 'message', send: 'message', play_music: 'music_play' };
       const dup = f.name === 'phone' ? done.get(ALIAS[args.action] || args.action) : null;   // тот же тип действия в этой реплике уже выполнен малой моделью
       if (dup && Date.now() - dup.at < 30000) out = `Уже выполнено (повторно не запускаю): ${dup.r}. Ничего больше не делай, просто коротко подтверди пользователю.`;
+      else if (f.name === 'look') {
+        const cam = args.target === 'camera';
+        out = await runTool(user, 'phone', { action: cam ? 'camera_frame' : 'screen' }, { cwd: workspaceOf(user.id), autonomy: 'auto', userText: String(args.question || (cam ? 'Что видно на камере?' : 'Что на экране?')), attach() {}, onOutput() {}, endTurn() {}, signal: AbortSignal.timeout(60000), phone: (x) => phoneCall(user.id, (type, data) => send({ t: type, ...data }), x) });
+      }
       else if (f.name === 'run_task') out = await runTask(args);
       else if (FAST_TOOLS.includes(f.name)) {
         out = await runTool(user, f.name, args, {
@@ -166,7 +186,8 @@ export function voiceAgentSession(ws, user, params) {
       case 'AgentAudioDone': send({ t: 'state', state: 'listening' }); break;
       case 'ConversationText': {
         const text = clean(j.content); if (!text) break;
-        if (j.role === 'user') { send({ t: 'user', text }); saveMsg(conv.id, 'user', text); done.clear(); pendingFast = null; if (phoneModelEnabled()) pendingFast = fastTry(text).catch(() => null); }   // новая реплика — новая «память» выполненного
+        if (j.role === 'user') { send({ t: 'user', text }); saveMsg(conv.id, 'user', text);
+          if (translate) { const v = /[а-яё]/i.test(text) ? TR_VOICES[translate][1] : config.voiceAgent.speakModel; if (v !== curVoice) { curVoice = v; upSend({ type: 'UpdateSpeak', speak: { provider: { type: 'deepgram', model: v } } }); } } done.clear(); pendingFast = null; if (!translate && phoneModelEnabled()) pendingFast = fastTry(text).catch(() => null); }   // новая реплика — новая «память» выполненного
         else { send({ t: 'agent', text }); saveMsg(conv.id, 'assistant', text); }
         break;
       }

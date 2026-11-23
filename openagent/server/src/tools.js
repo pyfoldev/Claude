@@ -521,13 +521,13 @@ async function runTool0(user, name, args, ctx) {
         const hr = /^httpresp:(\d+)\n([\s\S]*)$/.exec(r);
         if (hr) return summarizeHttp(user, args, +hr[1], hr[2]);
         const m = /^screenshot:([0-9a-f]+)([\s\S]*)$/.exec(r);
-        if (args.action === 'screen' && m) {     // скриншот с телефона → описываем vision-моделью, основной модели отдаём текст
+        if ((args.action === 'screen' || args.action === 'camera_frame') && m) {     // скриншот с телефона → описываем vision-моделью, основной модели отдаём текст
           const row = db.prepare('SELECT path FROM files WHERE id=? AND user_id=?').get(m[1], user.id);
           if (!row || !fs.existsSync(row.path)) return 'Снимок экрана не найден на сервере';
           try {
             const q = String(ctx.userText || '').slice(0, 400);
             const hint = m[2].trim() ? `\nТекст, найденный системой на экране: ${m[2].trim().slice(0, 1500)}` : '';
-            return await describeImage(user, row.path, `Это снимок экрана телефона пользователя. Вопрос пользователя: «${q}». Опиши коротко и по делу, что на экране (приложение, главное содержимое, важный текст, кнопки/действия) и ответь на вопрос. По-русски, без вступлений.${hint}`, ctx.signal);
+            return await describeImage(user, row.path, `${args.action === 'camera_frame' ? 'Это кадр с камеры телефона пользователя.' : 'Это снимок экрана телефона пользователя.'} Вопрос пользователя: «${q}». Опиши коротко и по делу, что на экране (приложение, главное содержимое, важный текст, кнопки/действия) и ответь на вопрос. По-русски, без вступлений.${hint}`, ctx.signal);
           } catch (e) { return m[2].trim() ? `Vision недоступен (${e.message}). Текст на экране:\n${m[2].trim().slice(0, 2000)}` : `Не удалось разобрать снимок: ${e.message}`; }
         }
         if (r.startsWith('text:')) return 'Снимка нет, но система передала текст экрана:\n' + r.slice(5).slice(0, 3000);

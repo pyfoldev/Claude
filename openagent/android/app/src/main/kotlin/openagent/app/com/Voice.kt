@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 
+private val TR_NAMES = linkedMapOf("en" to "English", "es" to "Español", "fr" to "Français", "de" to "Deutsch", "it" to "Italiano", "nl" to "Nederlands", "ja" to "日本語")
+
 @Composable
 fun VoiceScreen(vm: AppVM) {
     val ctx = LocalContext.current
@@ -46,6 +48,8 @@ fun VoiceScreen(vm: AppVM) {
         else perm.launch(Manifest.permission.RECORD_AUDIO)
     }
     BackHandler { vm.stopVoice() }
+    val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) vm.cameraOn = true else vm.toast = "Нужен доступ к камере" }
+    var trMenu by remember { mutableStateOf(false) }
     val view = androidx.compose.ui.platform.LocalView.current
     DisposableEffect(Unit) { view.keepScreenOn = true; vm.voiceMuted = false; vm.voiceStartedAt = System.currentTimeMillis(); onDispose { view.keepScreenOn = false } }
     DisposableEffect(Unit) { onDispose { if ((ctx as? android.app.Activity)?.isChangingConfigurations != true) vm.stopVoice() } }
@@ -69,13 +73,17 @@ fun VoiceScreen(vm: AppVM) {
     val orb = when (state) { VoiceState.Listening -> OrbState.Listening; VoiceState.Thinking -> OrbState.Thinking; VoiceState.Speaking -> OrbState.Speaking; else -> OrbState.Idle }
 
     val hasText = vm.voiceReply.isNotBlank() || vm.voiceCaption.isNotBlank()
-    val orbSize by androidx.compose.animation.core.animateDpAsState(if (hasText) 190.dp else 300.dp, tween(300), label = "orbsize")
+    val orbSize by androidx.compose.animation.core.animateDpAsState(if (vm.cameraOn) 110.dp else if (hasText) 190.dp else 300.dp, tween(300), label = "orbsize")
     val breathe by rememberInfiniteTransition(label = "sat").animateFloat(0.9f, 1f, infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "satb")
     val satScale = if (state == VoiceState.Thinking) breathe else 1f
     Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("%d:%02d".format(secs / 60, secs % 60), color = C.dim, fontSize = 15.sp)
         // средняя часть занимает всё свободное место и прокручивается — длинный ответ не сдвигает кнопки
         Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            if (vm.cameraOn) {
+                CameraPreviewBox(vm.cameraFront, Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(24.dp)))
+                Spacer(Modifier.height(10.dp))
+            }
             Box(Modifier.size(orbSize).clip(CircleShape).clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { Haptics.heavy(); vm.voiceInterrupt() }, contentAlignment = Alignment.Center) {
                 val pulse by animateFloatAsState(1f + 0.16f * level, tween(90), label = "pulse")
                 SaturnMark(72.dp, modifier = Modifier.graphicsLayer { scaleX = satScale * pulse; scaleY = satScale * pulse }, alpha = 0.95f)
@@ -94,6 +102,22 @@ fun VoiceScreen(vm: AppVM) {
                 LaunchedEffect(vm.voiceReply) { scroll.animateScrollTo(scroll.maxValue) }
                 Box(Modifier.weight(1f, fill = false).fillMaxWidth().padding(top = 12.dp)) {
                     Text(vm.voiceReply, color = C.text, fontSize = 17.sp, lineHeight = 24.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().verticalScroll(scroll).padding(horizontal = 8.dp))
+                }
+            }
+        }
+        if (vm.translateTo.isNotBlank()) Text("Переводчик: русский ↔ ${TR_NAMES[vm.translateTo] ?: vm.translateTo}", color = C.onContainer, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 14.dp)) {
+            RoundButton(if (vm.cameraOn) Icons.Outlined.Videocam else Icons.Outlined.VideocamOff, "Камера", {
+                if (vm.cameraOn) vm.cameraOn = false
+                else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) vm.cameraOn = true
+                else camPerm.launch(Manifest.permission.CAMERA)
+            }, size = 56.dp, container = if (vm.cameraOn) C.onContainer else C.container, content = if (vm.cameraOn) Color.Black else C.onContainer, iconSize = 26.dp)
+            AnimatedVisibility(vm.cameraOn) { RoundButton(Icons.Outlined.FlipCameraAndroid, "Сменить камеру", { vm.cameraFront = !vm.cameraFront }, size = 56.dp, container = C.container, content = C.onContainer, iconSize = 26.dp) }
+            Box {
+                RoundButton(Icons.Outlined.Translate, "Переводчик", { trMenu = true }, size = 56.dp, container = if (vm.translateTo.isNotBlank()) C.onContainer else C.container, content = if (vm.translateTo.isNotBlank()) Color.Black else C.onContainer, iconSize = 26.dp)
+                androidx.compose.material3.DropdownMenu(expanded = trMenu, onDismissRequest = { trMenu = false }) {
+                    androidx.compose.material3.DropdownMenuItem(text = { Text(if (vm.translateTo.isBlank()) "Обычный разговор ✓" else "Обычный разговор") }, onClick = { trMenu = false; vm.setTranslate("") })
+                    for ((code, name) in TR_NAMES) androidx.compose.material3.DropdownMenuItem(text = { Text("Перевод: русский ↔ $name" + if (vm.translateTo == code) " ✓" else "") }, onClick = { trMenu = false; vm.setTranslate(code) })
                 }
             }
         }

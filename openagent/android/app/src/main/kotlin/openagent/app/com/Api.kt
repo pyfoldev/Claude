@@ -163,8 +163,8 @@ class Api(private val store: Store) {
         Request.Builder().url(base.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/stt-stream?lang=$lang&silence=$silenceMs")
             .apply { store.token?.let { header("Authorization", "Bearer $it") } }.build()
     /** Голосовой агент (Deepgram Voice Agent через наш сервер): поток PCM в обе стороны. */
-    fun voiceAgentSocket(lang: String): Request =
-        Request.Builder().url(base.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/voice-agent?lang=$lang")
+    fun voiceAgentSocket(lang: String, translate: String = ""): Request =
+        Request.Builder().url(base.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/voice-agent?lang=$lang" + (if (translate.isNotBlank()) "&translate=$translate" else ""))
             .apply { store.token?.let { header("Authorization", "Bearer $it") } }.build()
     private fun req(path: String) = Request.Builder().url(base + path).apply { store.token?.let { header("Authorization", "Bearer $it") } }
 
