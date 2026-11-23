@@ -134,6 +134,10 @@ class Store(ctx: Context) {
     var sttLang: String get() = p.getString("sttLang", "auto") ?: "auto"; set(v) = p.edit().putString("sttLang", v).apply()
     /** Режим голоса: "agent" — Deepgram Voice Agent (Claude Haiku 4.5 + «Владимир»); "gigaam" — распознавание GigaAM Multilingual 600M + ответ модели + озвучка Deepgram Flux. */
     /** Вызов ассистента двойным хлопком (фоновое прослушивание: YAMNet на телефоне, аудио никуда не отправляется). */
+    /** Защита голосом/лицом: проверка перед голосовым сеансом, жест ✌️, строгость. Отпечатки лежат в BioVault (зашифрованы Keystore). */
+    var gateSessions: Boolean get() = p.getBoolean("gateSessions", false); set(v) = p.edit().putBoolean("gateSessions", v).apply()
+    var gestureWake: Boolean get() = p.getBoolean("gestureWake", false); set(v) = p.edit().putBoolean("gestureWake", v).apply()
+    var bioStrict: String get() = p.getString("bioStrict", "normal") ?: "normal"; set(v) = p.edit().putString("bioStrict", v).apply()
     var clapWake: Boolean get() = p.getBoolean("clapWake", false); set(v) = p.edit().putBoolean("clapWake", v).apply()
     var clapSens: String get() = p.getString("clapSens", "normal") ?: "normal"; set(v) = p.edit().putString("clapSens", v).apply()
     var voiceMode: String get() = p.getString("voiceMode", "agent") ?: "agent"; set(v) = p.edit().putString("voiceMode", v).apply()

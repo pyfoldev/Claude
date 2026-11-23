@@ -38,7 +38,7 @@ private val INTERESTS = listOf("Технологии и ИИ", "Бизнес", "
 fun OnboardingScreen(vm: AppVM) {
     val ctx = LocalContext.current
     var step by remember { mutableIntStateOf(0) }
-    val total = 6
+    val total = 7
     var name by remember { mutableStateOf(vm.user?.name.orEmpty()) }
     var address by remember { mutableStateOf("ty") }
     var city by remember { mutableStateOf("") }; var home by remember { mutableStateOf("") }
@@ -85,6 +85,10 @@ fun OnboardingScreen(vm: AppVM) {
                         Text("Длина ответов", color = C.dim, fontSize = 13.sp); Segmented(listOf("short" to "Кратко", "detailed" to "Подробно"), style, { style = it })
                         Text("Тон", color = C.dim, fontSize = 13.sp); Segmented(listOf("joke" to "С юмором", "serious" to "Серьёзно"), humor, { humor = it })
                         Field(about, { about = it }, "Ещё о вас: семья, привычки, любимые места, что не любите…", singleLine = false, minLines = 4)
+                    }
+                    5 -> {
+                        H("Защита", "По желанию: запишите голос и лицо — и приложение, и голосовые сеансы смогут открываться только вам. Всё хранится на телефоне; можно пропустить и сделать позже в настройках.")
+                        BioEnrollRows(vm)
                     }
                     else -> {
                         H("Доступы", "Чтобы я мог звонить, писать, ставить встречи и находить рядом — разрешите нужное. Всё можно выдать позже в настройках.")

@@ -122,9 +122,12 @@ class AssistActivity : ComponentActivity() {
         setContent {
             OpenAgentTheme(st.dynamicColor, 1f, st.amoled) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalVM provides vm) {
+                    Box(Modifier.fillMaxSize()) {
                     AssistCall(vm, onClose = { vm.stopVoice(); finish() }, openApp = {
                         startActivity(Intent(this@AssistActivity, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); finish()
                     })
+                    if (vm.gateOpen) BioGate(vm, false)
+                    }
                 }
             }
         }

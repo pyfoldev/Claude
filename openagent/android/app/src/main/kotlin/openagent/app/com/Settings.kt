@@ -229,6 +229,7 @@ fun SettingsScreen(vm: AppVM) {
                     val km = ctx.getSystemService(android.content.Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
                     if (on && !km.isDeviceSecure) vm.toast = "Сначала установите блокировку экрана на телефоне" else vm.updAppLock(on)
                 }
+                BioSettings(vm)
                 SwitchRow(Icons.Outlined.Shield, "Спрашивать перед рискованным", "Фоновые процессы, боты, git push, удаление — только после вашего «да»", vm.askRisky, vm::updAskRisky)
             }
             Group("Голос") {

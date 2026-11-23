@@ -718,6 +718,7 @@ val LocalVM = androidx.compose.runtime.compositionLocalOf<AppVM?> { null }
 
 @Composable
 fun LockScreen(vm: AppVM) {
+    if (vm.hasVoice || vm.hasFace) { BioGate(vm, true); return }   // записан голос или лицо — разблокировка по ним (пароль телефона — запасной вход)
     val ctx = LocalContext.current
     val km = remember { ctx.getSystemService(android.content.Context.KEYGUARD_SERVICE) as android.app.KeyguardManager }
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r -> if (r.resultCode == android.app.Activity.RESULT_OK) vm.locked = false }

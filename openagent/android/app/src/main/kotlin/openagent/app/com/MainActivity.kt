@@ -98,6 +98,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (vm.locked && vm.user != null) LockScreen(vm)
+                    if (vm.gateOpen && vm.user != null && !vm.locked) BioGate(vm, false)
+                    GestureWatcher(vm)
                 }
                 }
             }

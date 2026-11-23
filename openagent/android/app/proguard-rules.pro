@@ -22,3 +22,11 @@
 # TensorFlow Lite (YAMNet для двойного хлопка): JNI обращается к классам по имени
 -keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.lite.**
+
+# ONNX Runtime и MediaPipe (JNI)
+-keep class ai.onnxruntime.** { *; }
+-keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.mediapipe.**
+-dontwarn com.google.protobuf.**
+-dontwarn javax.lang.model.**
+-dontwarn autovalue.shaded.**

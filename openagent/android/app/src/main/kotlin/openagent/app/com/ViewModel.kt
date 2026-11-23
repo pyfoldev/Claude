@@ -223,6 +223,23 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         if (dictating) { runCatching { dictRt?.cancel() }; dictRt = null; runCatching { dictJob?.cancel() }; runCatching { recorder.cancel() }; dictating = false; dictPartial = ""; dictLevel = 0f } }   // приложение свернули — микрофон не должен оставаться включённым
     fun onStartedLock() { if (appLock && stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 20_000) locked = true }
 
+    // ---- защита голосом/лицом, жест ----
+    var hasVoice by mutableStateOf(VoicePrint.enrolled(app)); var hasFace by mutableStateOf(FacePrint.enrolled(app))
+    var gateSessions by mutableStateOf(store.gateSessions); var gestureWake by mutableStateOf(store.gestureWake); var bioStrict by mutableStateOf(store.bioStrict)
+    var gateOpen by mutableStateOf(false)
+    private var gatePassUntil = 0L; private var gateThen: (() -> Unit)? = null
+    fun refreshBio() {
+        val a = getApplication<Application>(); hasVoice = VoicePrint.enrolled(a); hasFace = FacePrint.enrolled(a)
+        if (!hasVoice && !hasFace && gateSessions) updGateSessions(false)
+    }
+    fun updGateSessions(v: Boolean) { gateSessions = v; store.gateSessions = v }
+    fun updGestureWake(v: Boolean) { gestureWake = v; store.gestureWake = v }
+    fun updBioStrict(v: String) { bioStrict = v; store.bioStrict = v }
+    private fun needGate() = gateSessions && (hasVoice || hasFace) && System.currentTimeMillis() > gatePassUntil
+    private fun requireGate(then: () -> Unit) { gateThen = then; gateOpen = true }
+    fun gatePassed() { gatePassUntil = System.currentTimeMillis() + 10 * 60_000L; gateOpen = false; val t = gateThen; gateThen = null; t?.invoke() }
+    fun gateCancel() { gateOpen = false; gateThen = null; toast = "Сеанс отменён: проверка не пройдена"; if (screen == Screen.Voice) screen = Screen.Chat }
+
     var cameraRequest by mutableStateOf(false)
     // «поделиться в OpenAgent»
     var pendingText by mutableStateOf<String?>(null)
@@ -865,6 +882,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
     private var voiceJob: Job? = null
 
     fun startVoice() {
+        if (voiceJob?.isActive != true && needGate()) { if (!gateOpen) requireGate { startVoice() }; return }
         if (serverOld && !oldWarned) { oldWarned = true; toast = "Сервер не обновлён: звонок и распознавание будут медленнее. Запустите ./deploy/deploy.sh" }
         screen = Screen.Voice
         if (voiceJob?.isActive == true) return
