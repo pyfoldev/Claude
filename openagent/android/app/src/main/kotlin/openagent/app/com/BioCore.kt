@@ -94,7 +94,7 @@ fun centroid(list: List<FloatArray>): FloatArray { val c = FloatArray(list[0].si
 
 /** Строгость: порог «это вы» для голоса и лица. */
 object BioThr {
-    fun voice(strict: String) = when (strict) { "soft" -> 0.50f; "strict" -> 0.70f; else -> 0.60f }
+    fun voice(strict: String) = when (strict) { "soft" -> 0.40f; "strict" -> 0.60f; else -> 0.50f }
     fun face(strict: String) = when (strict) { "soft" -> 0.40f; "strict" -> 0.60f; else -> 0.50f }
 }
 
@@ -109,23 +109,33 @@ object VoicePrint {
     fun enrolled(ctx: Context) = BioVault.has(ctx, "voice")
     fun verify(ctx: Context, pcm: FloatArray): Float { val ref = BioVault.load(ctx, "voice") ?: return -1f; return cosine(embed(ctx, pcm), ref) }
 
-    /** Запись речи до maxMs; null — речи слишком мало (меньше ~1,2 с). */
+    /** Запись речи (до maxMs): оставляем только фразы с речью — тишина и шум не портят отпечаток; null — речи меньше ~1,3 с. Останавливается сама после 2,3 с речи и паузы. */
     @android.annotation.SuppressLint("MissingPermission")
     suspend fun record(maxMs: Int, onLevel: (Float) -> Unit): FloatArray? = withContext(Dispatchers.IO) {
         ClapState.paused = true
         val min = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val r = runCatching { AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min * 2, 8000)) }.getOrNull()
         if (r == null || r.state != AudioRecord.STATE_INITIALIZED) { r?.release(); ClapState.paused = false; return@withContext null }
-        val all = FloatArray(16 * maxMs); var n = 0; var speech = 0; val buf = ShortArray(1600)
+        val frames = ArrayList<FloatArray>(); val rmsList = ArrayList<Float>(); val buf = ShortArray(1600); var elapsed = 0; var speechN = 0; var quiet = 0
         try {
             r.startRecording()
-            while (n + 1600 <= all.size) {
-                val k = r.read(buf, 0, buf.size); if (k <= 0) break
-                var e = 0.0; for (i in 0 until k) { val f = buf[i] / 32768.0; all[n + i] = f.toFloat(); e += f * f }
-                n += k; val rms = sqrt(e / k).toFloat(); onLevel((rms * 12).coerceIn(0f, 1f)); if (rms > 0.012f) speech++
+            while (elapsed + 100 <= maxMs) {
+                var got = 0; while (got < 1600) { val k = r.read(buf, got, 1600 - got); if (k <= 0) break; got += k }
+                if (got < 1600) break
+                var e = 0.0; val f = FloatArray(1600) { i -> (buf[i] / 32768.0).toFloat().also { e += it * it } }
+                val rms = sqrt(e / 1600).toFloat(); frames.add(f); rmsList.add(rms); elapsed += 100
+                onLevel((rms * 10).coerceIn(0f, 1f))
+                if (rms > 0.012f) { speechN++; quiet = 0 } else quiet++
+                if (speechN >= 23 && quiet >= 5) break
             }
         } finally { runCatching { r.stop() }; r.release(); ClapState.paused = false }
-        if (speech < 12) null else all.copyOf(n)
+        if (frames.isEmpty()) return@withContext null
+        val peakRms = rmsList.maxOrNull() ?: 0f
+        val thr = maxOf(0.008f, peakRms * 0.12f)
+        val keep = frames.indices.filter { rmsList[it] >= thr }
+        if (keep.size < 13) return@withContext null
+        val out = FloatArray(keep.size * 1600); keep.forEachIndexed { j, i -> frames[i].copyInto(out, j * 1600) }
+        out
     }
 }
 

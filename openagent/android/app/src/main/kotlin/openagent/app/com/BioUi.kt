@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -82,177 +83,183 @@ fun FrontCamera(modifier: Modifier, fps: Int = 4, onFrame: (Bitmap) -> Unit) {
 private fun hasCam(ctx: Context) = ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 private fun hasMic(ctx: Context) = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
-/** Проверка «это вы»: по голосу или лицу (что записано), запасной вход — пароль/отпечаток телефона. lock=true — разблокировка приложения, иначе — старт голосовой сессии. */
+/** Проверка «это вы»: фон приложения + анимированная иконка (как Face ID). Камера работает скрыто, без превью. lock=true — разблокировка приложения, иначе — старт голосовой сессии. */
 @Composable
 fun BioGate(vm: AppVM, lock: Boolean) {
-    val ctx = LocalContext.current; val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current; val scope = rememberCoroutineScope(); val owner = LocalLifecycleOwner.current
     val voice = vm.hasVoice; val face = vm.hasFace
-    var method by remember { mutableStateOf(if (voice) "voice" else "face") }
+    var method by remember { mutableStateOf(if (face) "face" else "voice") }
     var msg by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }; var level by remember { mutableFloatStateOf(0f) }
-    var streak by remember { mutableIntStateOf(0) }
+    var state by remember { mutableIntStateOf(BIO_WORK) }; var camOk by remember { mutableStateOf(hasCam(ctx)) }; var micOk by remember { mutableStateOf(hasMic(ctx)) }
     val pass = { if (lock) vm.locked = false else vm.gatePassed() }
-    val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (!ok) msg = "Нужен доступ" else msg = "" }
+    val succeed: () -> Unit = { state = BIO_OK; msg = "Готово"; scope.launch { kotlinx.coroutines.delay(550); pass() } }
+    val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> camOk = ok; if (!ok) msg = "Нужен доступ к камере" }
+    val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> micOk = ok; if (!ok) msg = "Нужен доступ к микрофону" }
     val cred = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r -> if (r.resultCode == Activity.RESULT_OK) pass() }
     val km = remember { ctx.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager }
     fun askDevice() {
-        if (!km.isDeviceSecure) { msg = "На телефоне не установлена блокировка экрана"; return }
+        if (!km.isDeviceSecure) { msg = "На телефоне нет блокировки экрана"; return }
         @Suppress("DEPRECATION") val i = km.createConfirmDeviceCredentialIntent("OpenAgent", "Подтвердите, что это вы")
         if (i != null) runCatching { cred.launch(i) }
     }
     fun checkVoice() {
-        if (busy) return
-        if (!hasMic(ctx)) { perm.launch(Manifest.permission.RECORD_AUDIO); return }
-        busy = true; msg = "Говорите…"
+        if (busy || state == BIO_OK) return
+        if (!micOk) { micPerm.launch(Manifest.permission.RECORD_AUDIO); return }
+        busy = true; state = BIO_WORK; msg = "Скажите что-нибудь"
         scope.launch {
-            val pcm = VoicePrint.record(3500) { level = it }
-            if (pcm == null) { msg = "Не слышу речи — скажите любую фразу громче"; busy = false; level = 0f; return@launch }
+            val pcm = VoicePrint.record(5000) { level = it }
+            level = 0f
+            if (pcm == null) { state = BIO_FAIL; msg = "Не услышал речь — нажмите и повторите"; busy = false; return@launch }
             msg = "Проверяю…"
             val sc = withContext(Dispatchers.Default) { runCatching { VoicePrint.verify(ctx, pcm) }.getOrDefault(-1f) }
             val thr = BioThr.voice(vm.bioStrict)
-            if (sc >= thr) pass() else { msg = "Голос не подошёл (%.2f из нужных %.2f). Попробуйте ещё раз ближе к микрофону".format(sc, thr); Haptics.heavy() }
-            busy = false; level = 0f
+            if (sc >= thr) succeed() else { state = BIO_FAIL; msg = "Не совпало (%.0f%%, нужно %.0f%%) — нажмите и повторите".format(sc * 100, thr * 100); Haptics.heavy() }
+            busy = false
         }
     }
-    LaunchedEffect(method) { streak = 0; msg = ""; if (method == "face" && !hasCam(ctx)) perm.launch(Manifest.permission.CAMERA) }
+    LaunchedEffect(method, micOk) {
+        state = BIO_WORK; msg = ""
+        if (method == "voice") { if (micOk) checkVoice() else micPerm.launch(Manifest.permission.RECORD_AUDIO) }
+        else if (!camOk) camPerm.launch(Manifest.permission.CAMERA)
+    }
+    if (method == "face" && camOk) DisposableEffect(Unit) {
+        var streak = 0; var fails = 0; var done = false
+        val stop = bindFrontCamera(ctx, owner, null, 4) { bmp ->
+            if (done) return@bindFrontCamera
+            val sc = runCatching { FacePrint.verify(ctx, bmp) }.getOrNull()
+            val thr = BioThr.face(vm.bioStrict)
+            if (sc == null) { streak = 0; state = BIO_WORK; msg = if (BioDiag.status.isBlank() || BioDiag.status.startsWith("лиц", true)) "Посмотрите в камеру" else BioDiag.status }
+            else if (sc >= thr) { streak++; if (streak >= 2) { done = true; android.os.Handler(android.os.Looper.getMainLooper()).post { succeed() } } }
+            else { streak = 0; fails++; state = if (fails >= 3) BIO_FAIL else BIO_WORK; msg = if (fails >= 3) "Не узнаю (%.0f%%, нужно %.0f%%)".format(sc * 100, thr * 100) else "Смотрите прямо в камеру" }
+        }
+        onDispose { stop() }
+    }
     Column(Modifier.fillMaxSize().background(C.bg).systemBarsPadding().pointerInput(Unit) { detectTapGestures { } }.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(12.dp)); AppLogo(72.dp); Spacer(Modifier.height(14.dp))
-        Text(if (lock) "OpenAgent заблокирован" else "Подтвердите, что это вы", color = C.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text(if (lock) "Разблокируйте голосом или лицом" else "Голосовой сеанс начнётся после проверки", color = C.dim, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
-        if (voice && face) Segmented(listOf("voice" to "Голос", "face" to "Лицо"), method, { method = it })
-        Spacer(Modifier.height(16.dp))
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (method == "face") {
-                if (hasCam(ctx)) {
-                    Box(Modifier.fillMaxWidth().aspectRatio(0.8f).clip(RoundedCornerShape(28.dp))) {
-                        FrontCamera(Modifier.fillMaxSize(), fps = 3) { bmp ->
-                            val sc = runCatching { FacePrint.verify(ctx, bmp) }.getOrNull()
-                            if (sc == null) { streak = 0; msg = BioDiag.status.ifBlank { "Лица не видно — смотрите в камеру" } }
-                            else if (sc >= BioThr.face(vm.bioStrict)) { streak++; msg = "Узнаю…"; if (streak >= 2) { streak = -99; pass() } }
-                            else { streak = 0; msg = "Не вы (%.2f из нужных %.2f)".format(sc, BioThr.face(vm.bioStrict)) }
-                        }
-                    }
-                } else PillButton("Разрешить камеру", { perm.launch(Manifest.permission.CAMERA) }, icon = Icons.Outlined.Videocam)
-            } else {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size((110 + 50 * level).dp).clip(androidx.compose.foundation.shape.CircleShape).background(C.container), contentAlignment = Alignment.Center) { androidx.compose.material3.Icon(Icons.Outlined.Mic, null, tint = C.onContainer, modifier = Modifier.size(44.dp)) }
-                    Spacer(Modifier.height(24.dp))
-                    PillButton(if (busy) "Слушаю…" else "Сказать фразу", { checkVoice() }, enabled = !busy, icon = Icons.Outlined.Mic)
-                }
-            }
-        }
-        if (msg.isNotBlank()) Text(msg, color = C.dim, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton({ askDevice() }) { Text("Пароль / отпечаток телефона", color = C.onContainer) }
-            if (!lock) TextButton({ vm.gateCancel() }) { Text("Отмена", color = C.dim) }
-        }
+        Spacer(Modifier.weight(1f))
+        if (method == "face") FaceIdIcon(state, 148.dp)
+        else Box(Modifier.pointerInput(Unit) { detectTapGestures { checkVoice() } }) { VoiceIdIcon(level, state, listening = busy, size = 160.dp) }
+        Spacer(Modifier.height(28.dp))
+        Text(if (lock) "Разблокировать" else "Это вы?", color = C.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+        Text(msg.ifBlank { if (method == "face") "Посмотрите в камеру" else "Скажите что-нибудь" }, color = C.dim, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp).heightIn(min = 40.dp))
+        Spacer(Modifier.weight(1f))
+        if (voice && face) TextButton({ method = if (method == "face") "voice" else "face" }) { Text(if (method == "face") "Проверить голосом" else "Проверить лицом", color = C.onContainer) }
+        TextButton({ askDevice() }) { Text("Пароль телефона", color = C.dim) }
+        if (!lock) TextButton({ vm.gateCancel() }) { Text("Отмена", color = C.dim) }
     }
 }
 
-/** Запись голоса: три фразы по ~4 с → средний вектор говорящего. */
+/** Запись голоса: три фразы, запись стартует сама. */
 @Composable
 fun VoiceEnrollDialog(vm: AppVM, onClose: () -> Unit) {
-    val ctx = LocalContext.current; val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
     val phrases = listOf("Привет, ассистент, это мой голос, и я хочу, чтобы он открывал приложение", "Сегодня хорошая погода, поэтому я, пожалуй, схожу погулять в парк", "Запомни мой голос: только я могу начинать разговор с тобой")
     val embs = remember { mutableStateListOf<FloatArray>() }
-    var busy by remember { mutableStateOf(false) }; var msg by remember { mutableStateOf("") }; var level by remember { mutableFloatStateOf(0f) }
-    val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (!ok) msg = "Нужен доступ к микрофону" }
+    var msg by remember { mutableStateOf("") }; var level by remember { mutableFloatStateOf(0f) }; var state by remember { mutableIntStateOf(BIO_WORK) }
+    var micOk by remember { mutableStateOf(hasMic(ctx)) }; var attempt by remember { mutableIntStateOf(0) }; var listening by remember { mutableStateOf(false) }
+    val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> micOk = ok; if (!ok) msg = "Нужен доступ к микрофону" }
+    LaunchedEffect(Unit) { if (!micOk) perm.launch(Manifest.permission.RECORD_AUDIO) }
+    LaunchedEffect(micOk, attempt) {
+        if (!micOk || embs.size >= 3) return@LaunchedEffect
+        state = BIO_WORK; msg = ""; listening = true
+        val pcm = VoicePrint.record(7000) { level = it }
+        listening = false; level = 0f
+        if (pcm == null) { state = BIO_FAIL; msg = "Не услышал — нажмите на иконку и повторите"; return@LaunchedEffect }
+        val e = withContext(Dispatchers.Default) { runCatching { VoicePrint.embed(ctx, pcm) }.getOrNull() }
+        if (e == null) { state = BIO_FAIL; msg = "Не получилось обработать запись"; return@LaunchedEffect }
+        embs.add(e)
+        if (embs.size >= 3) {
+            val c = centroid(embs.toList()); val worst = embs.minOf { cosine(it, c) }
+            if (worst < 0.5f) { state = BIO_FAIL; msg = "Записи слишком разные — начнём заново"; embs.clear(); kotlinx.coroutines.delay(1200); attempt++ }
+            else { BioVault.save(ctx, "voice", c); vm.refreshBio(); state = BIO_OK; kotlinx.coroutines.delay(700); vm.toast = "Голос записан"; onClose() }
+        } else { state = BIO_OK; kotlinx.coroutines.delay(500); attempt++ }
+    }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(C.bg).systemBarsPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Запись голоса", color = C.text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("Фраза ${minOf(embs.size + 1, 3)} из 3 — скажите вслух, спокойно, как обычно", color = C.dim, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.pointerInput(Unit) { detectTapGestures { if (!listening && embs.size < 3) attempt++ } }) { VoiceIdIcon(level, state, listening, 160.dp) }
             Spacer(Modifier.height(28.dp))
-            Text("«${phrases[minOf(embs.size, 2)]}»", color = C.text, fontSize = 20.sp, lineHeight = 28.sp, textAlign = TextAlign.Center)
+            if (embs.size < 3) Text("«${phrases[embs.size]}»", color = C.text, fontSize = 18.sp, lineHeight = 26.sp, textAlign = TextAlign.Center)
+            Text(msg.ifBlank { "Прочитайте вслух" }, color = C.dim, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { repeat(3) { i -> Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(if (i < embs.size) C.onContainer else C.container)) } }
             Spacer(Modifier.weight(1f))
-            Box(Modifier.size((110 + 50 * level).dp).clip(androidx.compose.foundation.shape.CircleShape).background(C.container), contentAlignment = Alignment.Center) { androidx.compose.material3.Icon(Icons.Outlined.Mic, null, tint = C.onContainer, modifier = Modifier.size(44.dp)) }
-            if (msg.isNotBlank()) Text(msg, color = C.dim, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
-            Spacer(Modifier.weight(1f))
-            PillButton(if (busy) "Слушаю…" else "Записать", {
-                if (!hasMic(ctx)) { perm.launch(Manifest.permission.RECORD_AUDIO); return@PillButton }
-                busy = true; msg = ""
-                scope.launch {
-                    val pcm = VoicePrint.record(5000) { level = it }
-                    if (pcm == null) { msg = "Не слышу речи — повторите громче"; busy = false; level = 0f; return@launch }
-                    val e = withContext(Dispatchers.Default) { runCatching { VoicePrint.embed(ctx, pcm) }.getOrNull() }
-                    if (e == null) msg = "Не получилось обработать запись" else {
-                        embs.add(e)
-                        if (embs.size >= 3) {
-                            val c = centroid(embs.toList()); val worst = embs.minOf { cosine(it, c) }
-                            if (worst < 0.6f) { msg = "Записи сильно отличаются (%.2f) — давайте заново".format(worst); embs.clear() }
-                            else { BioVault.save(ctx, "voice", c); vm.refreshBio(); vm.toast = "Голос записан"; onClose() }
-                        }
-                    }
-                    busy = false; level = 0f
-                }
-            }, enabled = !busy, icon = Icons.Outlined.Mic)
             TextButton(onClose) { Text("Отмена", color = C.dim) }
         }
     }
 }
 
-/** Запись лица: несколько кадров с камеры → средний вектор. */
+/** Запись лица: камера работает скрыто, на экране только иконка и точки прогресса. */
 @Composable
 fun FaceEnrollDialog(vm: AppVM, onClose: () -> Unit) {
-    val ctx = LocalContext.current
+    val ctx = LocalContext.current; val owner = LocalLifecycleOwner.current
     val embs = remember { mutableStateListOf<FloatArray>() }
-    var msg by remember { mutableStateOf("Смотрите в камеру, не торопясь поворачивайте голову чуть влево и вправо") }
-    var lastAt by remember { mutableLongStateOf(0L) }
-    val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (!ok) msg = "Нужен доступ к камере" }
-    LaunchedEffect(Unit) { if (!hasCam(ctx)) perm.launch(Manifest.permission.CAMERA) }
+    var msg by remember { mutableStateOf("Смотрите в камеру и слегка поворачивайте голову") }
+    var state by remember { mutableIntStateOf(BIO_WORK) }; var camOk by remember { mutableStateOf(hasCam(ctx)) }
+    val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> camOk = ok; if (!ok) msg = "Нужен доступ к камере" }
+    LaunchedEffect(Unit) { if (!camOk) perm.launch(Manifest.permission.CAMERA) }
+    if (camOk) DisposableEffect(Unit) {
+        var lastAt = 0L; var done = false
+        val stop = bindFrontCamera(ctx, owner, null, 3) { bmp ->
+            val now = SystemClock.elapsedRealtime()
+            if (done || now - lastAt < 600) return@bindFrontCamera
+            val f = runCatching { FacePrint.align(ctx, bmp) }.getOrNull()
+            if (f == null) { msg = "Лица не видно — посмотрите в камеру"; return@bindFrontCamera }
+            lastAt = now
+            runCatching { FacePrint.embed(ctx, f) }.getOrNull()?.let { embs.add(it) }
+            if (embs.size >= 6) {
+                val c = centroid(embs.toList()); val worst = embs.minOf { cosine(it, c) }
+                if (worst < 0.5f) { msg = "Кадры слишком разные — нужен свет получше"; state = BIO_FAIL; embs.clear() }
+                else { done = true; BioVault.save(ctx, "face", c); android.os.Handler(android.os.Looper.getMainLooper()).post { vm.refreshBio(); state = BIO_OK; msg = "Лицо записано" } }
+            } else { state = BIO_WORK; msg = "Хорошо, ещё немного" }
+        }
+        onDispose { stop() }
+    }
+    LaunchedEffect(state) { if (state == BIO_OK) { kotlinx.coroutines.delay(900); vm.toast = "Лицо записано"; onClose() } }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(C.bg).systemBarsPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Запись лица", color = C.text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("Снято ${embs.size} из 6 кадров", color = C.dim, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
-            if (hasCam(ctx)) Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(28.dp))) {
-                FrontCamera(Modifier.fillMaxSize(), fps = 3) { bmp ->
-                    val now = SystemClock.elapsedRealtime()
-                    if (embs.size < 6 && now - lastAt > 600) {
-                        val f = runCatching { FacePrint.align(ctx, bmp) }.getOrNull()
-                        if (f == null) msg = BioDiag.status.ifBlank { "Лица не видно — смотрите в камеру" } else {
-                            lastAt = now
-                            runCatching { FacePrint.embed(ctx, f) }.getOrNull()?.let { embs.add(it) }
-                            if (embs.size >= 6) {
-                                val c = centroid(embs.toList()); val worst = embs.minOf { cosine(it, c) }
-                                if (worst < 0.55f) { msg = "Кадры сильно отличаются — попробуйте при хорошем свете"; embs.clear() }
-                                else { BioVault.save(ctx, "face", c); vm.refreshBio(); vm.toast = "Лицо записано"; onClose() }
-                            } else msg = "Хорошо, ещё немного…"
-                        }
-                    }
-                }
-            } else Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { PillButton("Разрешить камеру", { perm.launch(Manifest.permission.CAMERA) }, icon = Icons.Outlined.Videocam) }
-            Text(msg, color = C.dim, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 14.dp))
+            Spacer(Modifier.weight(1f))
+            FaceIdIcon(state, 160.dp)
+            Spacer(Modifier.height(28.dp))
+            Text(msg, color = C.text, fontSize = 16.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { repeat(6) { i -> Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(if (i < embs.size || state == BIO_OK) C.onContainer else C.container)) } }
+            Spacer(Modifier.weight(1f))
             TextButton(onClose) { Text("Отмена", color = C.dim) }
         }
     }
 }
 
-/** Кнопки записи голоса и лица — для настроек и мастера знакомства. */
+/** Компактные строки «Голос» и «Лицо»: нажатие — записать, если уже записано — перезаписать или удалить. */
 @Composable
 fun BioEnrollRows(vm: AppVM) {
-    var dlg by remember { mutableStateOf("") }
+    var dlg by remember { mutableStateOf("") }; var manage by remember { mutableStateOf("") }
+    val app = vm.getApplication<android.app.Application>()
     if (dlg == "voice") VoiceEnrollDialog(vm) { dlg = "" }
     if (dlg == "face") FaceEnrollDialog(vm) { dlg = "" }
-    Row3(Icons.Outlined.RecordVoiceOver, "Мой голос", if (vm.hasVoice) "Записан (ReDimNet2)" else "Не записан", trailing = {
-        Row { TextButton({ dlg = "voice" }) { Text(if (vm.hasVoice) "Перезаписать" else "Записать", color = C.onContainer) }
-            if (vm.hasVoice) TextButton({ BioVault.clear(vm.getApplication<android.app.Application>(), "voice"); vm.refreshBio() }) { Text("Удалить", color = C.dim) } }
-    })
-    Row3(Icons.Outlined.Face, "Моё лицо", if (vm.hasFace) "Записано (MobileFaceNet)" else "Не записано", trailing = {
-        Row { TextButton({ dlg = "face" }) { Text(if (vm.hasFace) "Перезаписать" else "Записать", color = C.onContainer) }
-            if (vm.hasFace) TextButton({ BioVault.clear(vm.getApplication<android.app.Application>(), "face"); vm.refreshBio() }) { Text("Удалить", color = C.dim) } }
-    })
+    if (manage.isNotEmpty()) androidx.compose.material3.AlertDialog(onDismissRequest = { manage = "" }, containerColor = C.bg,
+        title = { Text(if (manage == "voice") "Голос" else "Лицо", color = C.text) },
+        confirmButton = { TextButton({ dlg = manage; manage = "" }) { Text("Перезаписать", color = C.onContainer) } },
+        dismissButton = { TextButton({ BioVault.clear(app, manage); vm.refreshBio(); manage = "" }) { Text("Удалить", color = C.dim) } })
+    Row3(Icons.Outlined.RecordVoiceOver, "Голос", if (vm.hasVoice) "Записан" else "Не записан", onClick = { if (vm.hasVoice) manage = "voice" else dlg = "voice" }) { Icon(Icons.Outlined.ChevronRight, null, tint = C.dim) }
+    Row3(Icons.Outlined.Face, "Лицо", if (vm.hasFace) "Записано" else "Не записано", onClick = { if (vm.hasFace) manage = "face" else dlg = "face" }) { Icon(Icons.Outlined.ChevronRight, null, tint = C.dim) }
 }
 
+/** Единый раздел «Защита и вызов»: голос, лицо, проверка, хлопок, жест. */
 @Composable
 fun BioSettings(vm: AppVM) {
     val ctx = LocalContext.current
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) vm.updGestureWake(true) else vm.toast = "Нужен доступ к камере" }
+    val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) vm.updClapWake(true) else vm.toast = "Нужен доступ к микрофону" }
     BioEnrollRows(vm)
     if (vm.hasVoice || vm.hasFace) {
-        SwitchRow(Icons.Outlined.VerifiedUser, "Сеансы только по моему голосу/лицу", "Перед голосовым звонком (в том числе вызванным хлопком или жестом) — проверка, что это вы. Действует 10 минут", vm.gateSessions, vm::updGateSessions)
-        Text("Строгость проверки", color = C.dim, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
-        Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { Segmented(listOf("soft" to "Мягко", "normal" to "Обычно", "strict" to "Строго"), vm.bioStrict, vm::updBioStrict) }
-        Text("Голос и лицо записываются в виде чисел-отпечатков (не записей и не фото), хранятся на телефоне под ключом Keystore. Это удобная блокировка, а не защита от целенаправленного взлома: запись голоса или фото владельца её обманут. Запасной вход — пароль телефона.", color = C.dim, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+        SwitchRow(Icons.Outlined.VerifiedUser, "Проверять перед сеансом", null, vm.gateSessions, vm::updGateSessions)
+        if (vm.gateSessions) Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { Segmented(listOf("soft" to "Мягко", "normal" to "Обычно", "strict" to "Строго"), vm.bioStrict, vm::updBioStrict) }
     }
-    SwitchRow(Icons.Outlined.PanTool, "Включение жестом ✌️", "Показали «викторию» в камеру — открывается голосовой звонок. Работает, пока приложение открыто на экране (Android не даёт камере работать в фоне)" + (if (vm.gestureWake && BioDiag.status.isNotBlank()) "\nСейчас: ${BioDiag.status}" else ""), vm.gestureWake) { on ->
+    SwitchRow(Icons.Outlined.GraphicEq, "Хлопок ×2", if (vm.clapWake) ClapState.summary() else "Два хлопка — звонок", vm.clapWake) { on ->
+        if (on && !hasMic(ctx)) micPerm.launch(Manifest.permission.RECORD_AUDIO) else vm.updClapWake(on)
+    }
+    if (vm.clapWake) Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { Segmented(listOf("low" to "Строго", "normal" to "Обычно", "high" to "Чутко"), vm.clapSens, vm::updClapSens) }
+    SwitchRow(Icons.Outlined.PanTool, "Жест ✌️", if (vm.gestureWake && BioDiag.status.isNotBlank()) BioDiag.status else "Покажите в камеру — звонок", vm.gestureWake) { on ->
         if (on && !hasCam(ctx)) camPerm.launch(Manifest.permission.CAMERA) else vm.updGestureWake(on)
     }
 }

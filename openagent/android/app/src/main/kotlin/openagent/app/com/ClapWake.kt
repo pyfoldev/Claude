@@ -30,6 +30,11 @@ import kotlin.math.sqrt
 object ClapState {
     @Volatile var paused = false        // идёт голосовой звонок — микрофон не трогаем
     @Volatile var last = ""             // диагностика: что слышал на последнем кандидате
+    @Volatile var running = false       // служба слушает
+    @Volatile var onsets = 0            // резких коротких ударов услышано
+    @Volatile var pairs = 0             // пар «два удара» найдено (до проверки YAMNet)
+    @Volatile var fired = 0             // вызовов ассистента
+    fun summary() = if (!running) "служба не запущена" else if (paused) "пауза (идёт звонок)" else "слышу: ударов $onsets, пар $pairs, вызовов $fired" + (if (last.isNotBlank()) "\nпоследняя пара: $last" else "")
 }
 
 object ClapIdx { const val SPEECH = 0; const val HANDS = 56; const val SNAP = 57; const val CLAPPING = 58; const val APPLAUSE = 62; const val SLAP = 461 }
@@ -48,15 +53,16 @@ class Yamnet(ctx: Context) {
 
 class ClapDetector {
     class Candidate(val t1: Long, val t2: Long, val window: FloatArray)
+    private class Ev(val t: Long, val clap: Boolean)
     private val ring = ShortArray(16000 * 4)
     private var total = 0L
     private val frameBuf = ShortArray(160); private var fp = 0
     private val dbs = FloatArray(4)
     private var nFrames = 0L
     private var floorDb = -60f; private var initN = 0; private var initSum = 0f; private var inited = false
-    private var open = -1L
+    private var open = -1L; private var peak = 0f
     private var lastEndMs = -1_000_000L
-    private val events = ArrayList<Long>()
+    private val events = ArrayList<Ev>()
     private var consumed = -1L
 
     fun feed(buf: ShortArray, n: Int): Candidate? {
@@ -77,23 +83,26 @@ class ClapDetector {
         dbs[(i % 4).toInt()] = db
         if (!inited) { initSum += db; if (++initN >= 20) { floorDb = initSum / initN; inited = true }; return null }
         if (open >= 0) {
+            // конец удара — когда громкость упала на DROP дБ от пика (а не от шумового пола: в тихой комнате хвост эха долго держится над полом)
+            if (db > peak) peak = db
             val dur = (i - open) * 10
-            if (db - floorDb <= 8f || dur > 400) {
-                if (dur <= MAX_EVENT) events.add(open * 10)
+            if (db < maxOf(floorDb + 6f, peak - DROP) || dur > 600) {
+                val clap = dur <= MAX_CLAP
+                events.add(Ev(open * 10, clap)); if (clap) ClapState.onsets++
                 lastEndMs = open * 10 + dur; open = -1
             }
             return null
         }
         floorDb = if (db < floorDb + 6) minOf(floorDb + 0.002f, db) else floorDb + 0.002f      // медленно ползущий шумовой пол
         val prev = dbs[((i - 3) % 4 + 4).toInt() % 4]
-        if (db - floorDb > ONSET && db - prev > RISE && ms - lastEndMs > REFRACT) open = i
-        events.removeAll { it < ms - 4000 }
+        if (db - floorDb > ONSET && db - prev > RISE && ms - lastEndMs > REFRACT) { open = i; peak = db; return null }
+        events.removeAll { it.t < ms - 4000 }
         for (k in 0 until events.size - 1) {
-            val t1 = events[k]; val t2 = events[k + 1]; val gap = t2 - t1
-            if (gap < GAP_MIN || gap > GAP_MAX || t2 == consumed) continue
-            if (events.any { it >= t1 - QUIET_BEFORE && it < t1 }) continue          // перед первым ударом были другие — не «двойной»
-            if (events.any { it > t2 && it <= t2 + QUIET_AFTER }) continue           // после второго есть ещё — серия/аплодисменты
-            if (open >= 0 || ms < t2 + QUIET_AFTER) continue                         // ждём тишину после второго удара
+            val e1 = events[k]; val e2 = events[k + 1]; val t1 = e1.t; val t2 = e2.t; val gap = t2 - t1
+            if (!e1.clap || !e2.clap || gap < GAP_MIN || gap > GAP_MAX || t2 == consumed) continue
+            if (events.any { it.t >= t1 - QUIET_BEFORE && it.t < t1 }) continue          // перед первым ударом были другие — не «двойной»
+            if (events.any { it.t > t2 && it.t <= t2 + QUIET_AFTER }) continue           // после второго есть ещё — серия/аплодисменты/речь
+            if (ms < t2 + QUIET_AFTER) continue                                          // ждём тишину после второго удара
             consumed = t2
             val start = maxOf(0L, (t1 - 120) * 16)
             val w = FloatArray(15600) { j -> val idx = start + j; if (idx < total && total - idx <= ring.size) ring[(idx % ring.size).toInt()] / 32768f else 0f }
@@ -103,14 +112,14 @@ class ClapDetector {
     }
 
     companion object {
-        const val ONSET = 17f; const val RISE = 11f; const val MAX_EVENT = 170; const val REFRACT = 80
+        const val ONSET = 17f; const val RISE = 11f; const val MAX_CLAP = 250; const val REFRACT = 80; const val DROP = 25f
         const val GAP_MIN = 170L; const val GAP_MAX = 650L; const val QUIET_BEFORE = 900L; const val QUIET_AFTER = 750L
     }
 }
 
 object ClapWake {
     /** Порог «похоже на хлопок» (сумма Clapping + Hands + Slap + Snapping) по чувствительности. */
-    fun threshold(sens: String) = when (sens) { "low" -> 0.40f; "high" -> 0.10f; else -> 0.20f }
+    fun threshold(sens: String) = when (sens) { "low" -> 0.30f; "high" -> 0.08f; else -> 0.15f }
 
     fun fire(ctx: Context) {
         runCatching { (ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator).vibrate(VibrationEffect.createWaveform(longArrayOf(0, 60, 70, 60), -1)) }
@@ -141,7 +150,7 @@ class ClapService : Service() {
             .setOngoing(true).setContentIntent(open).addAction(0, "Выключить", off).setPriority(NotificationCompat.PRIORITY_LOW).build()
         val ok = runCatching { androidx.core.app.ServiceCompat.startForeground(this, 20, n, if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0) }.isSuccess
         if (!ok) { stopSelf(); return START_NOT_STICKY }
-        if (!running) { running = true; thread = Thread { loop() }.also { it.isDaemon = true; it.start() } }
+        if (!running) { running = true; ClapState.running = true; thread = Thread { loop() }.also { it.isDaemon = true; it.start() } }
         return START_STICKY
     }
 
@@ -166,15 +175,17 @@ class ClapService : Service() {
                 val n = rec.read(buf, 0, buf.size)
                 if (n <= 0) { if (n < 0) { runCatching { rec.release() }; rec = null }; continue }
                 val c = det.feed(buf, n) ?: continue
+                ClapState.pairs++
                 if (System.currentTimeMillis() < cooldownUntil) continue
-                val s = yam.scores(c.window)
-                val clap = s[ClapIdx.CLAPPING] + s[ClapIdx.HANDS] + s[ClapIdx.SLAP] + s[ClapIdx.SNAP]
+                val sc = yam.scores(c.window)
+                val clap = sc[ClapIdx.CLAPPING] + sc[ClapIdx.HANDS] + sc[ClapIdx.SLAP] + sc[ClapIdx.SNAP]
+                val perc = clap + sc[354] + sc[353] + sc[454]               // + Tap, Knock, Thump: звук резкий и «ударный»
                 val thr = ClapWake.threshold(st.clapSens)
-                val pass = clap >= thr && s[ClapIdx.APPLAUSE] < 0.35f && s[ClapIdx.SPEECH] < 0.5f
-                ClapState.last = "хлопок %.2f (порог %.2f), аплодисменты %.2f, речь %.2f → %s".format(clap, thr, s[ClapIdx.APPLAUSE], s[ClapIdx.SPEECH], if (pass) "вызов" else "игнор")
-                if (pass) { cooldownUntil = System.currentTimeMillis() + 6000; ClapWake.fire(this) }
+                val pass = (clap >= thr || perc >= thr * 1.8f) && sc[ClapIdx.APPLAUSE] < 0.35f && sc[ClapIdx.SPEECH] < 0.5f
+                ClapState.last = "хлопок %.2f / удар %.2f (нужно %.2f), аплодисменты %.2f, речь %.2f → %s".format(clap, perc, thr, sc[ClapIdx.APPLAUSE], sc[ClapIdx.SPEECH], if (pass) "вызов" else "игнор")
+                if (pass) { cooldownUntil = System.currentTimeMillis() + 6000; ClapState.fired++; ClapWake.fire(this) }
             }
-        } finally { rec?.let { runCatching { it.stop() }; runCatching { it.release() } }; yam.close(); running = false }
+        } finally { rec?.let { runCatching { it.stop() }; runCatching { it.release() } }; yam.close(); running = false; ClapState.running = false }
     }
 
     override fun onDestroy() { running = false; super.onDestroy() }
