@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Локальная модель Qwen3.5-2B на сервере без GPU (llama.cpp, Q4_K_M): ТОЛЬКО болтовня (короткий промпт, без инструментов). Код, документы, фото, поиск — облако.
+# Локальная модель Qwen3.5-2B на сервере без GPU (llama.cpp, Q4_K_M): появится в окне модели как провайдер «Локальная»; по умолчанию не выбрана, включается вручную.
 # Запускать на сервере от root: bash setup-local-llm.sh   (после основного setup.sh). Нужно ~2 ГБ диска и ~2 ГБ свободной ОЗУ.
 set -euo pipefail
 APP=/opt/openagent; DIR=/opt/llm; mkdir -p "$DIR"; cd "$DIR"
@@ -43,6 +43,6 @@ EOP
 systemctl daemon-reload && systemctl enable --now openagent-llm
 
 # 4) подключение к OpenAgent
-grep -q '^LOCAL_LLM_URL=' $APP/.env || printf '\n# Локальная модель (Qwen3.5-2B): только болтовня. Остальное — облако\nLOCAL_LLM_URL=http://127.0.0.1:8080/v1\nLOCAL_LLM_MODEL=qwen3.5-2b\n' >> $APP/.env
+grep -q '^LOCAL_LLM_URL=' $APP/.env || printf '\n# Локальная модель (Qwen3.5-2B): выбирается вручную в окне модели\nLOCAL_LLM_URL=http://127.0.0.1:8080/v1\nLOCAL_LLM_MODEL=qwen3.5-2b\n' >> $APP/.env
 systemctl restart openagent
 echo "Готово. Проверка: curl -s localhost:8080/health ; журнал: journalctl -u openagent-llm -f"

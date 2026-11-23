@@ -331,15 +331,12 @@ const withTimeout = (p, ms, fallback) => Promise.race([p, new Promise((r) => set
 export function startRun(user, conv, text, attachments, opts = {}) {
   const { voice = false } = opts;
   let prov = resolveProvider(user, voice ? 'river' : opts.provider);
-  // Маршрутизация: ТОЛЬКО болтовня → локальная малая модель на сервере (короткий промпт, без инструментов). Код, документы, фото, поиск, вопросы,
-  // голос, автоматизации и осознанно выбранные другие модели → облако как раньше. «По умолчанию» = river и стандартная модель (так шлёт приложение).
+  // Локальная малая модель на сервере — ТОЛЬКО по явному выбору пользователя (провайдер «Локальная» в окне модели). По умолчанию чат идёт как раньше (river.ai и др.).
+  // Она отвечает коротким промптом и без инструментов; с фото — облако (локальная модель текстовая). Не ответила до первого слова → river.ai.
   let routedLocal = false;
-  {
-    const isDefaultRiver = prov.id === 'river' && (!opts.model || [config.river.fastModel, config.river.model, 'fast', 'auto'].includes(opts.model));
-    if (!voice && !opts.automation && conv.mode !== 'code' && localUp() && (opts.provider === 'local' || isDefaultRiver) && isChitchat(text, !!attachments?.length)) {
-      const lp = resolveProvider(user, 'local');
-      if (lp?.id === 'local') { prov = lp; opts = { ...opts, model: localModel() }; routedLocal = true; }
-    }
+  if (!voice && !opts.automation && conv.mode !== 'code' && opts.provider === 'local' && localUp() && !(attachments || []).some((a) => a.mime?.startsWith('image/'))) {
+    const lp = resolveProvider(user, 'local');
+    if (lp?.id === 'local') { prov = lp; opts = { ...opts, model: localModel() }; routedLocal = true; }
   }
   let effort = voice ? 'auto' : (['low', 'high'].includes(opts.effort) ? opts.effort : 'auto');   // в звонке reasoning_effort не шлём: по замерам он добавлял 0,5–0,9 с до первого слова
   let model = opts.model;
