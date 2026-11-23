@@ -68,7 +68,13 @@ object BioVault {
 object BioDiag {
     @Volatile var status = ""
     @Volatile var rot = 0                     // какой поворот кадра сработал в прошлый раз (самонастройка)
-    fun err(e: Throwable) { status = "Сбой: ${e.javaClass.simpleName}: ${e.message}".take(180) }
+    /** Полная причина сбоя: цепочка исключений, верхний кадр стека и архитектура процессора телефона. */
+    fun err(e: Throwable) {
+        val chain = generateSequence(e) { it.cause }.take(4).joinToString(" ← ") { "${it.javaClass.simpleName}: ${it.message}" }
+        val top = e.stackTrace.firstOrNull()?.let { " @${it.className.substringAfterLast('.')}.${it.methodName}" } ?: ""
+        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "?"
+        status = "Сбой [${if (android.os.Process.is64Bit()) "64" else "32"} бит, $abi]: $chain$top".take(420)
+    }
 }
 private fun rotated(b: Bitmap, deg: Int): Bitmap = if (deg == 0) b else Bitmap.createBitmap(b, 0, 0, b.width, b.height, Matrix().apply { postRotate(deg.toFloat()) }, true)
 private val ROTS = listOf(0, 90, 270, 180)

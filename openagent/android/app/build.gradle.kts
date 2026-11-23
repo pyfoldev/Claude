@@ -13,8 +13,8 @@ android {
         applicationId = "openagent.app.com"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "8.0"
+        versionCode = 9
+        versionName = "9.0"
         ndk { abiFilters += listOf("arm64-v8a") }   // современные телефоны (64 бит); без 32-битных и x86 — APK заметно меньше (ONNX Runtime и MediaPipe тяжёлые)
         // Адрес вашего сервера и Web client ID для входа через Google (из google-services.json)
         buildConfigField("String", "SERVER_URL", "\"https://openagents.duckdns.org\"")
@@ -33,8 +33,8 @@ android {
     buildTypes {
         debug { signingConfig = signingConfigs.getByName("openagent") }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false          // R8 отключён: MediaPipe/ONNX Runtime/TFLite зовут Java-классы из нативного кода, сжатие их ломает
+            isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("openagent")
         }
