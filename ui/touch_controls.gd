@@ -43,6 +43,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenTouch:
 		var p: Vector2 = event.position * (size / get_viewport().get_visible_rect().size) if false else _to_local(event.position)
+		if event.pressed and hud and hud.tool_box.visible and hud.tool_box.get_global_rect().has_point(p):
+			return
 		if event.pressed:
 			var b := _btn_at(p)
 			if b != "":
