@@ -1,0 +1,15 @@
+node_modules/
+.env
+data/
+workspaces/
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+
+*.jks
+*.db
+*.db-*
+server/src/data/
+node_modules

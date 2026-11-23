@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="new_chat" android:enabled="true" android:icon="@drawable/ic_sc_chat" android:shortcutShortLabel="@string/sc_chat" android:shortcutLongLabel="@string/sc_chat_long">
+        <intent android:action="openagent.NEW_CHAT" android:targetPackage="openagent.app.com" android:targetClass="openagent.app.com.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="new_code" android:enabled="true" android:icon="@drawable/ic_sc_code" android:shortcutShortLabel="@string/sc_code" android:shortcutLongLabel="@string/sc_code_long">
+        <intent android:action="openagent.NEW_CODE" android:targetPackage="openagent.app.com" android:targetClass="openagent.app.com.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="voice" android:enabled="true" android:icon="@drawable/ic_sc_voice" android:shortcutShortLabel="@string/sc_voice" android:shortcutLongLabel="@string/sc_voice_long">
+        <intent android:action="openagent.VOICE" android:targetPackage="openagent.app.com" android:targetClass="openagent.app.com.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="camera" android:enabled="true" android:icon="@drawable/ic_sc_camera" android:shortcutShortLabel="@string/sc_camera" android:shortcutLongLabel="@string/sc_camera_long">
+        <intent android:action="openagent.CAMERA" android:targetPackage="openagent.app.com" android:targetClass="openagent.app.com.MainActivity" />
+    </shortcut>
+</shortcuts>

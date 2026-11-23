@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "199268040211",
+    "project_id": "openagent-e221f",
+    "storage_bucket": "openagent-e221f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:199268040211:android:9b0f2aa3bac10afd5489e6",
+        "android_client_info": {
+          "package_name": "openagent.app.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "199268040211-o81u4shtd4trbemiorddnjs3jm7acd9g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAn9WUEuZwAOOmn8WifvXG9Dbatf8gb5U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "199268040211-o81u4shtd4trbemiorddnjs3jm7acd9g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

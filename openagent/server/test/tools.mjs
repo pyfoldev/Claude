@@ -1,0 +1,117 @@
+// Прямая проверка ВСЕХ инструментов (без модели): правильные аргументы → ожидаемый результат; плохие аргументы → понятная ошибка, а не падение.
+import fs from 'node:fs';
+import path from 'node:path';
+import { mkUser } from './harness.mjs';
+import { runTool, ALL_TOOL_NAMES } from '../src/tools.js';
+import { workspaceOf } from '../src/workspace.js';
+
+const user = mkUser('tools@example.com', 'owner');
+const guest = mkUser('guest@example.com', 'user');
+const ws = workspaceOf(user.id);
+const cwd = path.join(ws, 'tt'); fs.mkdirSync(cwd, { recursive: true });
+const files = [];
+const ctx = (o = {}) => ({ cwd, signal: undefined, attach: (f) => files.push(f), onOutput() {}, autonomy: 'auto', userText: '', endTurn() {}, ...o });
+const results = []; const tested = new Set();
+async function t(name, args, expect, o = {}) {
+  tested.add(name);
+  let out; const t0 = Date.now();
+  try { out = String(await runTool(o.user || user, name, args, ctx(o.ctx))); } catch (e) { out = 'THROW ' + e.message; }
+  const ms = Date.now() - t0;
+  const ok = typeof expect === 'function' ? expect(out) : expect.test(out);
+  results.push({ name, ok, ms, out: out.slice(0, 160).replace(/\n/g, ' ') });
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name.padEnd(16)} ${String(ms).padStart(5)}ms ${ok ? '' : '→ ' + out.slice(0, 200).replace(/\n/g, ' ')}`);
+}
+const NOERR = (o) => !/^Ошибка|THROW/.test(o);
+fs.writeFileSync(path.join(cwd, 'a.txt'), 'one\ntwo\nthree\n'); fs.mkdirSync(path.join(cwd, 'sub'), { recursive: true }); fs.writeFileSync(path.join(cwd, 'sub', 'b.py'), 'print(1)\n# MARK\n');
+
+await t('bash', { command: 'echo hi && pwd' }, /hi[\s\S]*tt[\s\S]*\[exit 0\]/);
+await t('bash', { command: 'exit 3' }, /\[exit 3\]/);
+await t('bash', { command: 'sleep 5', timeout: 1 }, /таймаут/);
+await t('bash', { command: 'echo x' }, /Ошибка.*shell/, { user: guest });
+await t('bash', { command: 'git push origin main' }, /ОТКАЗАНО/, { ctx: { autonomy: 'ask' } });
+await t('bash', { command: 'sleep 1; echo bg', background: true }, /pid=\d+/);
+await t('process', { action: 'list' }, NOERR);
+await t('read_file', { path: 'a.txt' }, /1\tone[\s\S]*3\tthree/);
+await t('read_file', { path: 'a.txt', offset: 2, limit: 1 }, /2\ttwo/);
+await t('read_file', { path: 'нет-такого.txt' }, /Ошибка/);
+await t('read_files', { paths: ['a.txt', 'sub/b.py', 'nope'] }, /one[\s\S]*print\(1\)[\s\S]*Ошибка/);
+await t('write_file', { path: 'new/c.txt', content: 'привет' }, /Записано/);
+await t('edit_file', { path: 'new/c.txt', old: 'привет', new: 'пока' }, /Заменено/);
+await t('edit_file', { path: 'new/c.txt', old: 'нет', new: 'x' }, /не найден/);
+await t('multi_edit', { path: 'a.txt', edits: [{ old: 'one', new: '1' }, { old: 'two', new: '2' }] }, /Применено правок: 2/);
+await t('multi_edit', { path: 'a.txt', edits: [{ old: '1', new: 'x' }, { old: 'ZZZ', new: 'y' }] }, /НЕ изменён/);
+await t('list_dir', { path: '.' }, /a\.txt[\s\S]*sub\//);
+await t('grep', { pattern: 'MARK' }, /b\.py:2/);
+await t('grep', { pattern: '(' }, (o) => !/THROW/.test(o));
+await t('glob', { pattern: '**/*.py' }, /b\.py/);
+await t('python', { code: 'print(sum(range(5)))' }, /10/);
+await t('python', { code: 'raise ValueError("boom")' }, /ValueError/);
+await t('calculate', { expression: 'sqrt(16)+2^3' }, /12/);
+await t('calculate', { expression: '1/0' }, (o) => !/THROW/.test(o));
+await t('todo_write', { todos: [{ text: 'a', status: 'pending' }] }, /обновлён/);
+await t('ask_user', { question: 'Да?', options: ['да', 'нет'] }, /Вопрос показан/);
+await t('send_file', { path: 'a.txt', caption: 'x' }, NOERR);
+await t('chart', { type: 'bar', labels: ['a', 'b'], series: [{ name: 's', data: [1, 2] }] }, NOERR);
+await t('chart', { type: 'pie', labels: ['a', 'b'], values: [1, 2] }, NOERR);
+await t('chart', { type: 'table', columns: ['x'], rows: [[1]] }, NOERR);
+await t('plot_function', { functions: ['x^2', 'sin(x)'], xmin: -3, xmax: 3 }, NOERR);
+await t('geometry', { objects: [{ type: 'point', name: 'A', x: 0, y: 0 }, { type: 'point', name: 'B', x: 3, y: 0 }, { type: 'point', name: 'C', x: 0, y: 4 }, { type: 'polygon', points: ['A', 'B', 'C'] }] }, NOERR);
+await t('diagram', { dot: 'digraph{a->b}' }, (o) => NOERR(o) || /graphviz/.test(o));   // на машине без graphviz — понятная ошибка
+await t('draw_svg', { svg: '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></svg>' }, NOERR);
+await t('create_file', { path: 'memo.docx', content: '# Заголовок\n- пункт\n' }, NOERR);
+await t('create_file', { path: 'memo.pdf', content: '# Заголовок\n- пункт\n' }, NOERR);
+await t('create_file', { path: 'tab.xlsx', content: JSON.stringify([['a', 'b'], [1, 2]]) }, NOERR);
+await t('create_file', { path: 'slides.pptx', content: '# Слайд 1\n- а\n' }, NOERR);
+await t('create_file', { path: 'x.csv', content: 'a,b\n1,2\n' }, NOERR);
+await t('edit_document', { path: 'memo.docx', ops: [{ op: 'append', md: 'Добавлено' }] }, NOERR);
+await t('read_file', { path: 'memo.docx' }, /Заголовок/);
+await t('html_app', { title: 'Тест', html: '<!doctype html><html><body><h1>hi</h1></body></html>' }, NOERR);
+await t('deploy_site', { name: 'tt-site', files: { 'index.html': '<h1>x</h1>' } }, /\/s\/tt-site/, { ctx: { userText: 'опубликуй сайт' } });
+await t('list_sites', {}, /tt-site/);
+await t('delete_site', { name: 'tt-site' }, /удалён/);
+await t('skill_save', { name: 'tt-skill', description: 'd', content: 'делай X' }, NOERR);
+await t('skill_load', { name: 'tt-skill' }, /делай X/);
+await t('skill_load', { name: 'нет-навыка' }, (o) => !/THROW/.test(o));
+await t('schedule_create', { name: 'tt', prompt: 'привет', every_minutes: 60 }, NOERR);
+await t('schedule_list', {}, /tt/);
+await t('schedule_delete', { id: 999999 }, /Не найдено/);
+await t('memory_save', { content: 'Тестовый факт про кофе без сахара', kind: 'preference' }, NOERR);
+await t('memory_search', { query: 'кофе' }, NOERR);
+await t('memory_forget', { id: 999999 }, (o) => !/THROW/.test(o));
+await t('tasks', { op: 'add', text: 'купить хлеб' }, NOERR);
+await t('tasks', { op: 'list' }, /хлеб/);
+await t('lookup', { source: 'rates', query: 'USD RUB' }, /\d/);
+await t('lookup', { source: 'wiki', query: 'Python' }, /Python|питон/i);
+await t('lookup', { source: 'weather', query: 'Москва' }, /°|C/);
+await t('lookup', { source: 'geocode', query: 'Красная площадь Москва' }, /\d+\.\d+/);
+await t('web_search', { query: 'OpenAI news' }, (o) => o.length > 100 && NOERR(o));
+await t('web_fetch', { url: 'https://example.com' }, /Example Domain/);
+await t('web_fetch', { url: 'http://127.0.0.1:1/' }, /Ошибка/);
+await t('http_request', { method: 'GET', url: 'https://example.com' }, /Example Domain|200/);
+await t('http_request', { url: 'http://169.254.169.254/latest/meta-data/' }, (o) => !/ami-id|instance-id/.test(o));
+await t('github_api', { path: '/rate_limit' }, (o) => !/THROW/.test(o));
+await t('skill_search', { query: 'python' }, (o) => !/THROW/.test(o));
+await t('delegate', { task: 'x' }, /недоступно/);
+await t('phone', { action: 'flashlight', on: true }, (o) => !/THROW/.test(o));
+await t('data_query', { op: 'show', file: 'nope' }, (o) => !/THROW/.test(o));
+await t('mail', { op: 'list' }, (o) => !/THROW/.test(o));
+await t('mission_create', { goal: 'тест миссии', title: 'тест' }, (o) => !/THROW/.test(o));
+await t('mission_list', {}, (o) => !/THROW/.test(o));
+await t('mission_update', { id: 999999, note: 'x' }, (o) => !/THROW/.test(o));
+await t('generate_image', { prompt: 'a cat' }, (o) => !/THROW/.test(o));
+await t('skill_install', { repo: 'nonexistent-owner-xyz/none' }, (o) => !/THROW/.test(o));
+// безопасность: SSRF у обычного пользователя
+await t('http_request', { url: 'http://127.0.0.1:8787/health' }, /запрещ/, { user: guest });
+await t('http_request', { url: 'http://169.254.169.254/latest/meta-data/' }, /запрещ/, { user: guest });
+await t('http_request', { url: 'http://[::1]/' }, /запрещ/, { user: guest });
+await t('web_fetch', { url: 'http://localhost:8787/' }, /запрещ/, { user: guest });
+await t('web_fetch', { url: 'file:///etc/passwd' }, /http\(s\)|Некорректн/, { user: guest });
+// безопасность
+await t('read_file', { path: '/etc/passwd' }, /Доступ вне|Ошибка/, { user: guest });
+await t('write_file', { path: '../../escape.txt', content: 'x' }, /Доступ вне|Ошибка/, { user: guest, ctx: { cwd: workspaceOf(guest.id) } });
+await t('bash', { command: 'env | grep -E "RIVER_API_KEY|DEEPGRAM_API_KEY|JWT_SECRET" | wc -l' }, /^0\s/);
+
+const missing = ALL_TOOL_NAMES.filter((n) => !tested.has(n));
+const bad = results.filter((r) => !r.ok);
+console.log(`\nИТОГО: ${results.length - bad.length}/${results.length} ок; не покрыты: ${missing.join(', ') || '—'}`);
+setTimeout(() => process.exit(bad.length ? 1 : 0), 300);

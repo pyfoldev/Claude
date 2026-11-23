@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="a11y_desc">Позволяет OpenAgent по вашей команде закрывать приложения, переключать Wi-Fi и Bluetooth в быстрых настройках и читать текст экрана. Ничего не отправляется без вашего запроса.</string>
+    <string name="sc_chat">Новый чат</string><string name="sc_chat_long">Новый чат с ассистентом</string>
+    <string name="sc_code">Code</string><string name="sc_code_long">Новая сессия Code</string>
+    <string name="sc_voice">Голос</string><string name="sc_voice_long">Голосовой режим</string>
+    <string name="sc_camera">Фото</string><string name="sc_camera_long">Сфотографировать и спросить</string>
+</resources>

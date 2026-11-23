@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+<style>html,body{margin:0;height:100%;background:#000;display:flex;align-items:center;justify-content:center}</style></head>
+<body><div id="w"></div>
+<script>
+function send(t){ try{ Android.onToken(t); }catch(e){} }
+window.onload = function(){
+  var iv = setInterval(function(){
+    if(!window.turnstile) return; clearInterval(iv);
+    turnstile.render('#w', {sitekey:'__SITEKEY__', theme:'dark', callback:send,
+      'expired-callback':function(){ try{Android.onExpired();}catch(e){} },
+      'error-callback':function(){ try{Android.onError();}catch(e){} }});
+  }, 100);
+};
+</script></body></html>
