@@ -107,3 +107,27 @@ export function slotsOk(actions, text) {
   }
   const lv = parseLevel(text); return lv !== null && lv === a.level;
 }
+
+// ---- Проверка «привязки к фразе»: малая модель иногда придумывает лишнее («позвонить пользователю», «фонарь выключить» вместо включить) ----
+const OFF_RE = /выключ|отключ|выруб|погас|деактив|отруб|закрой|убери/;
+const ON_RE = /включ|вруб|актив|запуст|зажг|засвет|посвет|раздай|открой|подключ/;
+const stem = (w) => w.slice(0, Math.max(3, Math.min(5, w.length - 2)));
+const hasWord = (text, word) => { const t = norm(text); return word.toLowerCase().split(/\s+/).filter(Boolean).every((w) => /^\d+$/.test(w) ? t.includes(w) : t.split(' ').some((x) => x.startsWith(stem(w)))); };
+
+/** true — действия опираются на то, что реально сказано. */
+export function groundedOk(actions, text) {
+  const t = norm(text);
+  if (actions.length > 1 && !/( и |,|потом|затем|еще|заодно)/.test(String(text).toLowerCase().replace(/ё/g, 'е'))) return false;   // две команды без «и/потом» — выдумка
+  for (const a of actions) {
+    if (a.action === 'call' && !hasWord(t, a.to)) return false;                                   // кому звонить — только названо в фразе
+    if (a.action === 'message' && (!hasWord(t, a.to) || !hasWord(t, a.text.split(' ')[0]))) return false;
+    if (a.action === 'music_play' && !hasWord(t, a.query)) return false;
+    if (a.action === 'open_app' || a.action === 'close_app') { /* canonical-имена (youtube) отличаются от сказанного — проверяется списком приложений на телефоне */ }
+    if ('on' in a && (a.action === 'toggle' || a.action === 'flashlight')) {   // включить/выключить — направление должно совпасть с глаголом
+      const off = OFF_RE.test(t), on = ON_RE.test(t) || /(^| )(вкл)( |$)/.test(t);
+      if (off && !on && a.on !== false) return false;
+      if (on && !off && a.on !== true) return false;
+    }
+  }
+  return true;
+}

@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
-import { slotsOk } from './slotCheck.js';
+import { slotsOk, groundedOk } from './slotCheck.js';
 
 const SCHEMA = {
   open_app: { app: 's!' }, close_app: { app: 's!' }, alarm: { hour: 'i!', minute: 'i', label: 's' }, timer: { seconds: 'i!', label: 's' }, stopwatch: { op: 's' }, flashlight: { on: 'b' },
@@ -64,7 +64,7 @@ export function phoneFast(text) {
     let acts; try { acts = JSON.parse(out.trim()); } catch { return null; }
     if (!Array.isArray(acts) || !acts.length) return null;
     for (const a of acts) { const e = validateAction(a); if (e) return null; }
-    if (!slotsOk(acts, String(text))) return null;   // числа сверяем независимым разбором фразы; сомнение → большая модель
+    if (!slotsOk(acts, String(text)) || !groundedOk(acts, String(text))) return null;   // числа сверяем независимым разбором фразы; сомнение → большая модель
     return { actions: acts, ms: Date.now() - t0 };
   };
   const p = chain.then(run, run); chain = p.catch(() => {});
