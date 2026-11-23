@@ -16,9 +16,6 @@ const cache = new Map();
 const COARENA = { id: 'coarena', name: 'Coarena', baseUrl: 'https://coarena.ai/api/v1' };
 const GROQ = { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' };
 const groqModels = () => (process.env.GROQ_MODELS || 'openai/gpt-oss-120b').split(',').map((x) => x.trim()).filter(Boolean);
-// Anthropic напрямую (OpenAI-совместимый слой /v1/chat/completions): включается ключом ANTHROPIC_API_KEY. Haiku 4.5 — быстрый и заметно «умнее» дешёвых моделей в инструментах и коде.
-const ANTH = { id: 'anthropic', name: 'Claude (Anthropic)', baseUrl: 'https://api.anthropic.com/v1' };
-export const anthropicModels = () => (process.env.ANTHROPIC_MODELS || 'claude-haiku-4-5,claude-sonnet-4-5').split(',').map((x) => x.trim()).filter(Boolean);
 const UNO = { id: 'unorouter', name: 'UnoRouter', baseUrl: 'https://api.unorouter.com/v1' };
 const UNO_DEFAULT = 'kimi-k3.1-pro:free,claude-haiku-5-5:free,gemini-3.6-flash:free,deepseek-v4.1-flash:free,gpt-oss-120b:free,glm-5.3-flash:free,qwen3.5-397b-a17b:free,nemotron-3-ultra-550b-a55b:free,minimax-m3.1-flash:free';
 const unoModels = () => (process.env.UNOROUTER_MODELS || UNO_DEFAULT).split(',').map((x) => x.trim()).filter(Boolean);
@@ -45,7 +42,6 @@ export const cachedModels = (id) => cache.get(id)?.models || [];
 
 export function resolveProvider(user, id) {
   if (!id || id === 'river') return { id: 'river', ...riverProv(), name: 'river.ai' };
-  if (id === 'anthropic' && process.env.ANTHROPIC_API_KEY) return { ...ANTH, apiKey: process.env.ANTHROPIC_API_KEY, effort: false, headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' } };
   if (id === 'unorouter' && process.env.UNOROUTER_API_KEY) return { ...UNO, apiKey: process.env.UNOROUTER_API_KEY, effort: false };
   if (id === 'perplexity' && pplxUp(user)) return { id: 'perplexity', name: 'Perplexity Agent', baseUrl: 'https://api.perplexity.ai', apiKey: '', effort: false };
   if (id === 'groq' && bridgeHas(user.id, 'api.groq.com')) return { ...GROQ, apiKey: '', effort: true, fetcher: (url, init) => bridgeFetch(user.id, url, init) };   // запросы выполняет приложение (ключ Groq только на телефоне)
@@ -64,7 +60,6 @@ export async function providersFor(user) {
   const rp = riverProv();
   const rm = await listModels(rp, 'river');
   out.push({ id: 'river', name: 'river.ai', builtin: true, baseUrl: rp.baseUrl, effort: true, models: rm.filter((m) => config.river.allowed.includes(m)) });
-  if (process.env.ANTHROPIC_API_KEY) out.push({ id: 'anthropic', name: ANTH.name, builtin: true, baseUrl: ANTH.baseUrl, effort: false, models: anthropicModels() });
   if (process.env.COARENA_API_KEY) {
     const all = await listModels({ ...COARENA, apiKey: process.env.COARENA_API_KEY }, 'coarena');
     const want = coarenaModels();

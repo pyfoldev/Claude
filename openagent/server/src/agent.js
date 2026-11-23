@@ -19,7 +19,8 @@ import { snapshot, snapshotAsync } from './checkpoints.js';
 
 // Экономия токенов (всегда включена): короткий промпт, мало шагов, обрезка истории и результатов инструментов.
 // Лимит шагов не должен обрывать работу посреди задачи: страхуют сжатие контекста и защита от зацикливания, жёсткий предел — высокий.
-const STEPS = { low: 12, auto: 40, high: 80 };
+// Потолок шагов — только страховка от бесконечного цикла, а не ограничитель: задача доводится до конца (как в Claude Code). Экономию дают промпт, защита от повторов и серий ошибок.
+const STEPS = { low: 40, auto: 250, high: 400 };
 const EFFORT_HINT = {
   low: 'Отвечай очень коротко, минимум шагов.',
   high: 'Действуй тщательно: план через todo_write, проверяй результат.',
@@ -447,9 +448,11 @@ export function startRun(user, conv, text, attachments, opts = {}) {
           });
           if (pending) emit('tool_output', { id: call.id, text: pending });
           const hint = call.function.name === 'bash' && /^\s*(cat|head|tail|ls|find|grep|rg|wc)\s/.test(String(args.command || '')) && !/[|;&]/.test(String(args.command || '')) && ++counters.bashRead <= 2 ? '\n[Совет: для чтения/поиска есть read_file, list_dir, grep, glob — быстрее и без терминала]' : '';
+          if (/^Ошибка|\[exit [1-9]/.test(String(result))) counters.errStreak = (counters.errStreak || 0) + 1; else counters.errStreak = 0;
+          const stuck = counters.errStreak >= 5 ? '\n[Уже 5 неудач подряд: остановись, разбери причину иначе или честно расскажи пользователю, что мешает.]' : '';
           const left = MAX_STEPS - 1 - step;
-          const budget = left <= 3 ? `\n[Осталось шагов: ${left} — заверши работу и дай итог]` : '';
-          return { call, result: (hint || budget) ? String(result) + hint + budget : result, files };
+          const budget = left <= 3 && step > 30 ? `\n[Осталось шагов: ${left} — заверши работу и дай итог]` : '';
+          return { call, result: (hint || budget || stuck) ? String(result) + hint + budget + stuck : result, files };
         };
         const finish = ({ call, result, files }) => {
           const tRow = insertMsg(conv.id, {
