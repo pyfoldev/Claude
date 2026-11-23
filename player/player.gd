@@ -101,27 +101,34 @@ func _ready() -> void:
 	Game.player = self
 
 func _build_viewmodels() -> void:
-	var cloth := Mats.color(Color(0.85, 0.8, 0.2), 0.95)
+	var cloth := Mats.tex("fabric", 3.0, Color(0.95, 0.9, 0.55), 1.0)
 	var rag := Node3D.new()
 	Props.box(rag, Vector3(0.1, 0.03, 0.12), Vector3(0, 0, 0), cloth)
 	Props.box(rag, Vector3(0.07, 0.02, 0.08), Vector3(0.02, 0.03, 0.0), Mats.color(Color(0.8, 0.75, 0.15)))
 	var mop := Node3D.new()
 	Props.cyl(mop, 0.012, 1.1, Vector3(0, 0.1, 0), Mats.color(Color(0.5, 0.35, 0.2)))
-	Props.box(mop, Vector3(0.16, 0.05, 0.1), Vector3(0, -0.45, 0), Mats.color(Color(0.8, 0.8, 0.75), 1.0))
+	for i in 7:
+		Props.cap(mop, 0.018, 0.2, Vector3(-0.06 + i * 0.02, -0.5, 0), Mats.color(Color(0.88, 0.88, 0.82), 1.0))
+	Props.box(mop, Vector3(0.14, 0.03, 0.04), Vector3(0, -0.4, 0), Mats.color(Color(0.3, 0.3, 0.32)))
 	mop.rotation_degrees = Vector3(-35, 10, 0)
 	var broom := Node3D.new()
-	Props.cyl(broom, 0.012, 1.0, Vector3(0, 0.1, 0), Mats.color(Color(0.55, 0.4, 0.22)))
-	Props.box(broom, Vector3(0.28, 0.1, 0.05), Vector3(0, -0.4, 0), Mats.color(Color(0.75, 0.6, 0.25), 1.0))
-	broom.rotation_degrees = Vector3(-30, 10, 0)
+	var bm := Props.make("broom")
+	bm.position = Vector3(0, -0.55, 0)
+	for c in bm.get_children():
+		if c is StaticBody3D: c.queue_free()
+	broom.add_child(bm)
+	broom.rotation_degrees = Vector3(-25, 10, 0)
 	var vac := Node3D.new()
 	Props.box(vac, Vector3(0.22, 0.2, 0.34), Vector3(0, -0.02, 0.0), Mats.color(Color(0.7, 0.12, 0.1), 0.5))
 	Props.cyl(vac, 0.02, 0.5, Vector3(0, 0.08, -0.25), Mats.color(Color(0.15, 0.15, 0.15)))
 	vac.get_child(vac.get_child_count() - 1).rotation_degrees = Vector3(90, 0, 0)
 	Props.box(vac, Vector3(0.14, 0.03, 0.12), Vector3(0, -0.14, -0.38), Mats.color(Color(0.1, 0.1, 0.1)))
 	var spray := Node3D.new()
-	Props.cyl(spray, 0.035, 0.18, Vector3(0, 0, 0), Mats.color(Color(0.2, 0.55, 0.75), 0.4))
-	Props.box(spray, Vector3(0.04, 0.05, 0.1), Vector3(0, 0.12, -0.03), Mats.color(Color(0.9, 0.9, 0.9)))
-	spray.rotation_degrees = Vector3(0, 0, 0)
+	var sb := Props.make("spraybottle")
+	sb.position = Vector3(0, -0.12, 0)
+	for c in sb.get_children():
+		if c is StaticBody3D: c.queue_free()
+	spray.add_child(sb)
 	vm_tools = {"rag": rag, "mop": mop, "broom": broom, "vacuum": vac, "spray": spray}
 	for k in vm_tools:
 		vm.add_child(vm_tools[k])

@@ -7,7 +7,12 @@ MODELS = ["Sofa_01","sofa_02","ArmChair_01","WoodenTable_01","CoffeeTable_01","W
  "old_bed_frame","GothicBed_01","painted_wooden_cabinet_02","GothicCabinet_01","vintage_cabinet_01","wooden_bookshelf_worn","Shelf_01",
  "drawer_cabinet","vintage_wooden_drawer_01","Television_01","electric_stove","ornate_mirror_01","vintage_radio_transceiver","wall_clock",
  "potted_plant_01","wooden_bucket_01","wooden_crate_01","cardboard_box_01","trashbag","vintage_suitcase","vintage_electric_kettle",
- "wooden_broom","multi_cleaner_bottle","metal_trash_can","vintage_oil_lamp","ceramic_vase_01","book_encyclopedia_set_01","ClassicNightstand_01","old_military_crate","gothic_statue"]
+ "wooden_broom","multi_cleaner_bottle","metal_trash_can","vintage_oil_lamp","ceramic_vase_01","book_encyclopedia_set_01","ClassicNightstand_01","old_military_crate","gothic_statue",
+ "dining_table","gallinera_table","Rockingchair_01","SchoolChair_01","painted_wooden_nightstand","painted_wooden_bench","hanging_picture_frame_01","hanging_picture_frame_02","hanging_picture_frame_03",
+ "fancy_picture_frame_01","fancy_picture_frame_02","standing_picture_frame_01","Chandelier_01","modern_ceiling_lamp_01","industrial_wall_sconce","metal_tool_chest","treasure_chest","power_box_01",
+ "utility_box_01","desk_lamp_arm_01","alarm_clock_01","mantel_clock_01","boombox","wine_bottles_01","antique_ceramic_vase_01","brass_vase_01","decorative_book_set_01","planter_pot_clay",
+ "ceiling_fan","brass_candleholders","wooden_candlestick","steel_frame_shelves_01","metal_office_desk","Barrel_01","covered_car","gallinera_chair","chinese_console_table","gothic_coffee_table",
+ "coffee_table_round_01","modern_arm_chair_01","painted_wooden_cabinet","plastic_crate_01","pot_enamel_01","brass_pot_01","hand_truck","wooden_ladder","standing_picture_frame_02"]
 def curl(url, out=None):
     cmd = ["curl","-sL","-m","180","-A","Mozilla/5.0"] + (["-o", out] if out else []) + [url]
     return subprocess.run(cmd, capture_output=True).stdout

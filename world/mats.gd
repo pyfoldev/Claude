@@ -16,6 +16,15 @@ static func tex(key: String, scale := 0.5, tint := Color(1, 1, 1), rough := 0.92
 		m.albedo_texture = _tex[path]
 	m.albedo_color = tint
 	m.roughness = rough
+	var np := "res://assets/tex/%s_n.jpg" % key
+	var rp := "res://assets/tex/%s_r.jpg" % key
+	if ResourceLoader.exists(np):
+		m.normal_enabled = true
+		m.normal_texture = load(np)
+		m.normal_scale = 0.9
+	if ResourceLoader.exists(rp):
+		m.roughness_texture = load(rp)
+		m.roughness = 1.0
 	m.uv1_triplanar = true
 	m.uv1_world_triplanar = true
 	m.uv1_scale = Vector3(scale, scale, scale)

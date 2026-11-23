@@ -7,6 +7,12 @@ static func _limb(parent: Node3D, name: String, pos: Vector3, size: Vector3, mat
 	piv.position = pos
 	parent.add_child(piv)
 	Props.cap(piv, maxf(size.x, size.z) * 0.55, size.y, Vector3(0, -size.y / 2.0, 0) + pivot_off, mat)
+	if name.begins_with("arm"):
+		# кисть с длинными пальцами
+		for i in 4:
+			var f := Props.cap(piv, 0.012, 0.16, Vector3(-0.03 + i * 0.02, -size.y - 0.07, 0.0), mat)
+			f.rotation_degrees = Vector3(0, 0, (i - 1.5) * 8.0)
+		Props.cap(piv, 0.02, 0.1, Vector3(-0.045, -size.y - 0.02, 0.02), mat).rotation_degrees = Vector3(0, 0, 40)
 	return piv
 
 static func _eyes(parent: Node3D, y: float, z: float, spread: float, size: float, color: Color) -> void:
@@ -30,6 +36,16 @@ static func build(type: String, o := {}) -> Node3D:
 			_limb(body, "arm_r", Vector3(0.32, 1.45, 0), Vector3(0.1, 0.95, 0.1), black)
 			_limb(body, "leg_l", Vector3(-0.12, 0.7, 0), Vector3(0.14, 0.7, 0.14), black)
 			_limb(body, "leg_r", Vector3(0.12, 0.7, 0), Vector3(0.14, 0.7, 0.14), black)
+			var smoke := Mats.color(Color(0.01, 0.01, 0.02, 0.55), 0.9)
+			smoke.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			for i in 7:
+				var a := i * TAU / 7.0
+				var w := Props.cap(body, 0.04, 0.9 + 0.2 * (i % 3), Vector3(cos(a) * 0.3, 0.9, sin(a) * 0.18), smoke)
+				w.rotation_degrees = Vector3(sin(a) * 12.0, 0, cos(a) * 14.0)
+			var tooth := Mats.color(Color(0.9, 0.9, 0.85), 0.5, 0.6)
+			for i in 6:
+				Props.box(body, Vector3(0.012, 0.035, 0.01), Vector3(-0.06 + i * 0.024, 1.6, 0.16), tooth)
+			body.rotation_degrees.x = 8.0
 			root.scale = Vector3.ONE * sc
 		"child":
 			root.set_meta("head", 1.0)
@@ -54,15 +70,25 @@ static func build(type: String, o := {}) -> Node3D:
 			_limb(body3, "arm_r", Vector3(0.4, 2.0, 0), Vector3(0.1, 1.45, 0.1), suit)
 			_limb(body3, "leg_l", Vector3(-0.15, 1.05, 0), Vector3(0.18, 1.05, 0.18), suit)
 			_limb(body3, "leg_r", Vector3(0.15, 1.05, 0), Vector3(0.18, 1.05, 0.18), suit)
-			for s in [-1, 1]:
-				Props.box(body3, Vector3(0.04, 0.3, 0.02), Vector3(s * 0.4, 0.4, 0.0), skin)
+			Props.box(body3, Vector3(0.14, 0.6, 0.02), Vector3(0, 1.75, 0.18), Mats.color(Color(0.85, 0.85, 0.82), 0.7))
+			Props.box(body3, Vector3(0.05, 0.5, 0.02), Vector3(0, 1.68, 0.195), Mats.color(Color(0.45, 0.02, 0.03), 0.6))
+			Props.cap(body3, 0.07, 0.25, Vector3(0, 2.1, 0), skin)
+			for i in 9:
+				Props.box(body3, Vector3(0.006, 0.05, 0.01), Vector3(-0.08 + i * 0.02, 2.17, 0.2), Mats.color(Color(0.02, 0, 0)))
+			Props.box(body3, Vector3(0.18, 0.012, 0.01), Vector3(0, 2.17, 0.205), Mats.color(Color(0.02, 0, 0)))
+			for sx in [-1, 1]:
+				Props.sph(body3, 0.035, Vector3(sx * 0.07, 2.3, 0.17), Mats.color(Color(0.0, 0.0, 0.0)), 1.4)
+				Props.box(body3, Vector3(0.04, 0.03, 0.006), Vector3(sx * 0.07, 2.3, 0.2), Mats.color(Color(0.9, 0.9, 0.85), 0.3, 1.5))
 		"crawler":
 			root.set_meta("head", 0.5)
+			var tt := Mats.color(Color(0.9, 0.9, 0.8), 0.5)
 			var tar := Mats.color(Color(0.01, 0.01, 0.02), 0.2, 0.0, 0.3)
 			var body4 := Node3D.new(); body4.name = "body"; root.add_child(body4)
 			Props.sph(body4, 0.38, Vector3(0, 0.35, 0), tar, 0.7)
 			Props.sph(body4, 0.2, Vector3(0, 0.3, 0.38), tar, 0.8)
 			_eyes(body4, 0.38, 0.52, 0.07, 0.06, Color(1, 0.1, 0.05))
+			for i in 5:
+				Props.box(body4, Vector3(0.02, 0.07, 0.015), Vector3(-0.08 + i * 0.04, 0.2, 0.62), tt)
 			for i in 6:
 				var a := i * TAU / 6.0
 				var l := _limb(body4, "leg_%d" % i, Vector3(cos(a) * 0.3, 0.35, sin(a) * 0.3), Vector3(0.05, 0.4, 0.05), tar)

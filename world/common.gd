@@ -51,23 +51,52 @@ static func bag(L: Level, pos: Vector3, yaw := 0.0) -> Node3D:
 	return n
 
 static func van_exit(L: Level, pos: Vector3, yaw := 0.0) -> void:
-	var van := L.b.prop("crate", pos, yaw, {"s": 0.01})
 	var root := Node3D.new()
 	root.position = pos
 	root.rotation_degrees.y = yaw
 	L.add_child(root)
-	var body := Mats.color(Color(0.85, 0.85, 0.82), 0.5)
-	Props.box(root, Vector3(2.0, 1.5, 4.2), Vector3(0, 0.95, 0), body)
-	Props.box(root, Vector3(1.9, 0.4, 1.3), Vector3(0, 0.9, 1.9), body)
-	Props.box(root, Vector3(1.9, 0.5, 0.05), Vector3(0, 1.3, 2.55), Mats.glass(Color(0.2, 0.3, 0.4, 0.6)))
-	Props.box(root, Vector3(2.02, 0.2, 2.4), Vector3(0, 0.95, -0.7), Mats.color(Color(0.1, 0.35, 0.65), 0.5))
+	var white := Mats.color(Color(0.82, 0.83, 0.8), 0.35, 0.0, 0.3)
+	var blue := Mats.color(Color(0.08, 0.28, 0.6), 0.4)
+	var dark := Mats.color(Color(0.05, 0.05, 0.06), 0.6)
+	# нижняя часть кузова, грузовой отсек, кабина, капот
+	Props.box(root, Vector3(1.95, 0.75, 4.7), Vector3(0, 0.62, 0), white)
+	Props.box(root, Vector3(1.9, 1.05, 2.9), Vector3(0, 1.5, -0.8), white)
+	Props.box(root, Vector3(1.85, 0.85, 1.25), Vector3(0, 1.38, 1.15), white)
+	var hood := Props.box(root, Vector3(1.85, 0.1, 1.2), Vector3(0, 1.1, 2.05), white, Vector3(-12, 0, 0))
+	var ws := Props.box(root, Vector3(1.75, 0.8, 0.06), Vector3(0, 1.62, 1.82), Mats.glass(Color(0.15, 0.22, 0.3, 0.7)), Vector3(-28, 0, 0))
 	for sx in [-1, 1]:
-		for z in [-1.3, 1.3]:
-			Props.cyl(root, 0.35, 0.25, Vector3(sx * 1.0, 0.35, z), Mats.color(Color(0.04, 0.04, 0.04)))
-			root.get_child(root.get_child_count() - 1).rotation_degrees = Vector3(0, 0, 90)
-	var col := Props.col(root, Vector3(2.0, 1.8, 4.2), Vector3(0, 0.9, 0))
-	var it: Interactable = L.b.interact(pos + Vector3(0, 1.0, 0) + Vector3(sin(deg_to_rad(yaw)), 0, cos(deg_to_rad(yaw))) * 1.5, Vector3(1.5, 1.8, 2.4), "Фургон: закончить смену", func(p): L.try_finish())
-	van.queue_free()
+		Props.box(root, Vector3(0.04, 0.5, 0.9), Vector3(sx * 0.93, 1.55, 1.15), Mats.glass(Color(0.15, 0.22, 0.3, 0.7)))
+		Props.box(root, Vector3(0.04, 0.22, 3.2), Vector3(sx * 0.98, 0.78, -0.2), blue)
+		var wx: float = 0.9 * sx
+		for wz in [1.35, -1.45]:
+			var wh := Props.cyl(root, 0.38, 0.28, Vector3(wx, 0.38, wz), Mats.color(Color(0.03, 0.03, 0.03), 0.9), -1.0, 16)
+			wh.rotation_degrees = Vector3(0, 0, 90)
+			var hub := Props.cyl(root, 0.2, 0.3, Vector3(wx + sx * 0.02, 0.38, wz), Mats.color(Color(0.7, 0.7, 0.72), 0.3, 0.0, 0.9), -1.0, 10)
+			hub.rotation_degrees = Vector3(0, 0, 90)
+		Props.box(root, Vector3(0.1, 0.16, 0.3), Vector3(sx * 0.75, 0.85, 2.5), Mats.color(Color(1, 0.95, 0.75), 0.2, 3.0))   # фары
+		Props.box(root, Vector3(0.1, 0.18, 0.1), Vector3(sx * 0.8, 0.85, -2.33), Mats.color(Color(0.8, 0.05, 0.05), 0.3, 1.5))  # задние огни
+		Props.box(root, Vector3(0.12, 0.25, 0.12), Vector3(sx * 1.0, 1.55, 1.7), dark)   # зеркала
+	Props.box(root, Vector3(1.98, 0.22, 0.2), Vector3(0, 0.38, 2.38), dark)   # бампер
+	Props.box(root, Vector3(1.98, 0.22, 0.2), Vector3(0, 0.38, -2.4), dark)
+	Props.box(root, Vector3(1.4, 0.04, 2.4), Vector3(0, 2.05, -0.8), dark)   # багажник на крыше
+	var lbl := Label3D.new()
+	lbl.text = "ЧистоДом"
+	lbl.font_size = 96; lbl.pixel_size = 0.0035
+	lbl.modulate = Color(1, 1, 1)
+	lbl.outline_modulate = Color(0.05, 0.2, 0.5)
+	lbl.outline_size = 24
+	lbl.position = Vector3(1.0, 1.55, -0.8)
+	lbl.rotation_degrees = Vector3(0, 90, 0)
+	root.add_child(lbl)
+	var lbl2 := lbl.duplicate()
+	lbl2.position = Vector3(-1.0, 1.55, -0.8)
+	lbl2.rotation_degrees = Vector3(0, -90, 0)
+	root.add_child(lbl2)
+	Props.col(root, Vector3(2.0, 1.9, 4.8), Vector3(0, 0.95, 0))
+	var f := Vector3(sin(deg_to_rad(yaw)), 0, cos(deg_to_rad(yaw)))
+	var side := Vector3(cos(deg_to_rad(yaw)), 0, -sin(deg_to_rad(yaw)))
+	L.b.interact(pos + Vector3(0, 1.0, 0) + side * 1.4, Vector3(2.4, 1.8, 3.0), "Фургон: закончить смену", func(p): L.try_finish(), {"layer": 2})
+	L.b.interact(pos + Vector3(0, 1.0, 0) - side * 1.4, Vector3(2.4, 1.8, 3.0), "Фургон: закончить смену", func(p): L.try_finish(), {"layer": 2})
 
 static func hide_wardrobe(L: Level, room: String, side: String, frac: float, tint := Color(0.55, 0.42, 0.32)) -> Node3D:
 	var n := L.b.against("wardrobe", room, side, frac, {"tint": tint}, 0.35)

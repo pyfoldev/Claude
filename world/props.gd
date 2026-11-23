@@ -57,13 +57,13 @@ static func col(root: Node3D, size: Vector3, center: Vector3, layer := 8) -> Sta
 const MODELS := {
 	"sofa": {"id": "sofa_02", "fit": "w", "v": 2.0},
 	"armchair": {"id": "ArmChair_01", "fit": "h", "v": 0.95},
-	"table": {"id": "WoodenTable_01", "fit": "box", "v": Vector3(1.4, 0.76, 0.8)},
-	"chair": {"id": "WoodenChair_01", "fit": "h", "v": 0.92},
+	"table": {"id": "dining_table", "fit": "box", "v": Vector3(1.6, 0.78, 0.95)},
+	"chair": {"id": "dining_chair_02", "fit": "h", "v": 0.95},
 	"stool": {"id": "wooden_stool_01", "fit": "h", "v": 0.5},
-	"bed": {"id": "old_bed_frame", "fit": "w", "v": 2.1},
-	"wardrobe": {"id": "vintage_cabinet_01", "fit": "h", "v": 2.0},
+	"bed": {"id": "GothicBed_01", "fit": "w", "v": 2.1},
+	"wardrobe": {"id": "GothicCabinet_01", "fit": "h", "v": 2.0},
 	"bookshelf": {"id": "wooden_bookshelf_worn", "fit": "h", "v": 2.0},
-	"dresser": {"id": "drawer_cabinet", "fit": "h", "v": 0.95},
+	"dresser": {"id": "vintage_wooden_drawer_01", "fit": "h", "v": 0.9},
 	"stove": {"id": "electric_stove", "fit": "h", "v": 0.9},
 	"mirror": {"id": "ornate_mirror_01", "fit": "h", "v": 1.5},
 	"radio": {"id": "vintage_radio_transceiver", "fit": "h", "v": 0.3},
@@ -77,7 +77,35 @@ const MODELS := {
 	"statue": {"id": "gothic_statue", "fit": "h", "v": 1.8},
 	"nightstand": {"id": "ClassicNightstand_01", "fit": "h", "v": 0.6},
 	"vase": {"id": "ceramic_vase_01", "fit": "h", "v": 0.35},
-	"books": {"id": "book_encyclopedia_set_01", "fit": "w", "v": 0.4},
+	"vase2": {"id": "antique_ceramic_vase_01", "fit": "h", "v": 0.4},
+	"books": {"id": "decorative_book_set_01", "fit": "w", "v": 0.35},
+	"chest": {"id": "treasure_chest", "fit": "w", "v": 0.9},
+	"toolchest": {"id": "metal_tool_chest", "fit": "h", "v": 0.7},
+	"fusebox": {"id": "power_box_01", "fit": "h", "v": 0.7},
+	"ceilinglamp": {"id": "modern_ceiling_lamp_01", "fit": "h", "v": 0.5},
+	"chandelier": {"id": "Chandelier_01", "fit": "h", "v": 0.9},
+	"frame1": {"id": "fancy_picture_frame_01", "fit": "w", "v": 0.8},
+	"frame2": {"id": "fancy_picture_frame_02", "fit": "w", "v": 0.7},
+	"frame3": {"id": "hanging_picture_frame_01", "fit": "w", "v": 0.7},
+	"frame4": {"id": "hanging_picture_frame_02", "fit": "w", "v": 0.6},
+	"frame5": {"id": "hanging_picture_frame_03", "fit": "w", "v": 0.6},
+	"alarmclock": {"id": "alarm_clock_01", "fit": "h", "v": 0.14},
+	"mantel": {"id": "mantel_clock_01", "fit": "h", "v": 0.25},
+	"bottles": {"id": "wine_bottles_01", "fit": "w", "v": 0.4},
+	"candles": {"id": "brass_candleholders", "fit": "h", "v": 0.35},
+	"deskl": {"id": "desk_lamp_arm_01", "fit": "h", "v": 0.4},
+	"boombox": {"id": "boombox", "fit": "w", "v": 0.4},
+	"pot": {"id": "pot_enamel_01", "fit": "w", "v": 0.3},
+	"barrel": {"id": "Barrel_01", "fit": "h", "v": 0.9},
+	"ladder": {"id": "wooden_ladder", "fit": "h", "v": 1.5},
+	"rocker": {"id": "Rockingchair_01", "fit": "h", "v": 1.0},
+	"bench": {"id": "painted_wooden_bench", "fit": "w", "v": 1.2},
+	"coffeetable": {"id": "gothic_coffee_table", "fit": "box", "v": Vector3(1.1, 0.45, 0.7)},
+	"covered_car": {"id": "covered_car", "fit": "w", "v": 4.2},
+	"desk": {"id": "metal_office_desk", "fit": "w", "v": 1.4},
+	"crate_red": {"id": "plastic_crate_01", "fit": "w", "v": 0.5},
+	"broom": {"id": "wooden_broom", "fit": "h", "v": 1.3},
+	"spraybottle": {"id": "multi_cleaner_bottle", "fit": "h", "v": 0.28},
 }
 static var _scenes: Dictionary = {}
 
@@ -127,21 +155,37 @@ static func model(kind: String, o := {}) -> Node3D:
 	holder.add_child(inst)
 	var size := bb.size * sc
 	holder.set_meta("size", size)
-	if kind == "bed":
-		var fab := Mats.tex("fabric", 0.9, o.get("tint", Color(0.62, 0.6, 0.66)))
-		var long_x := size.x >= size.z
-		var ms := Vector3(size.x - 0.12, 0.2, size.z - 0.12)
-		box(holder, ms, Vector3(0, 0.42, 0), Mats.color(Color(0.82, 0.8, 0.74), 0.95))
-		box(holder, Vector3(ms.x if not long_x else ms.x * 0.62, 0.07, ms.z if long_x else ms.z * 0.62), Vector3((ms.x * 0.18) if long_x else 0.0, 0.55, 0.0 if long_x else (ms.z * 0.18)), fab)
-		box(holder, Vector3(0.4, 0.12, 0.7) if long_x else Vector3(0.7, 0.12, 0.4), Vector3(-ms.x * 0.38, 0.58, 0.0) if long_x else Vector3(0.0, 0.58, -ms.z * 0.38), Mats.color(Color(0.92, 0.92, 0.9), 0.95))
-	if kind not in ["bag", "mirror", "radio", "kettle", "books", "vase"]:
+	if kind not in ["bag", "mirror", "radio", "kettle", "books", "vase", "vase2", "alarmclock", "mantel", "bottles", "candles", "deskl", "boombox", "pot", "ceilinglamp", "chandelier", "frame1", "frame2", "frame3", "frame4", "frame5", "broom", "spraybottle"]:
 		col(holder, size, Vector3(0, size.y / 2.0, 0))
 	return holder
 
+static func _clutter(holder: Node3D, kind: String, o: Dictionary) -> void:
+	var sz: Vector3 = holder.get_meta("size", Vector3(1, 0.8, 0.8))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(str(o) + kind + str(Time.get_ticks_usec() % 7))
+	var pool: Array = ["vase", "books", "candles", "bottles", "pot", "alarmclock"] if kind == "table" else ["mantel", "vase2", "books", "alarmclock", "deskl"]
+	var n := 1 if sz.x < 1.2 else 2
+	for i in n:
+		var k: String = pool[rng.randi() % pool.size()]
+		var it := model(k, {})
+		if it:
+			it.position = Vector3(rng.randf_range(-sz.x * 0.35, sz.x * 0.35), sz.y, rng.randf_range(-sz.z * 0.25, sz.z * 0.25))
+			it.rotation_degrees.y = rng.randf() * 360.0
+			holder.add_child(it)
+
 static func make(kind: String, o := {}) -> Node3D:
+	if kind == "picture":
+		var fk := "frame%d" % (1 + int(abs(hash(str(o))) + int(o.get("fr", 0))) % 5)
+		var fm := model(fk, o)
+		if fm != null:
+			fm.name = "picture"
+			# повернуть: рама лежит в плоскости XY лицом +Z (после проверки при необходимости меняется yaw модели)
+			return fm
 	var mdl := model(kind, o)
 	if mdl != null:
 		mdl.name = kind
+		if kind in ["table", "dresser", "coffeetable"] and not o.get("noclutter", false):
+			_clutter(mdl, kind, o)
 		return mdl
 	var r := Node3D.new()
 	r.name = kind

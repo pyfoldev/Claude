@@ -158,15 +158,17 @@ func _wall_line(parent: Node3D, room_id: String, axis_along: String, fixed: floa
 	for d in ops:
 		var lo: float = d.center - d.w / 2.0
 		var hi: float = d.center + d.w / 2.0
-		_wall_seg(parent, axis_along, fixed, cur, lo, y0, y0 + h, side_sign, wm)
+		_wall_seg(parent, axis_along, fixed, cur, lo, y0, y0 + h, side_sign, wm, true)
 		var dy: float = d.y
 		if dy > y0 + 0.01:
 			_wall_seg(parent, axis_along, fixed, lo, hi, y0, dy, side_sign, wm)
 		_wall_seg(parent, axis_along, fixed, lo, hi, dy + DOOR_H, y0 + h, side_sign, wm)
 		cur = hi
-	_wall_seg(parent, axis_along, fixed, cur, to, y0, y0 + h, side_sign, wm)
+	_wall_seg(parent, axis_along, fixed, cur, to, y0, y0 + h, side_sign, wm, true)
 
-func _wall_seg(parent: Node3D, axis_along: String, fixed: float, a: float, b: float, ya: float, yb: float, side_sign: float, mat: Material) -> void:
+static var _base_mat: StandardMaterial3D
+
+func _wall_seg(parent: Node3D, axis_along: String, fixed: float, a: float, b: float, ya: float, yb: float, side_sign: float, mat: Material, base := false) -> void:
 	if b - a < 0.01 or yb - ya < 0.01:
 		return
 	var len := b - a
@@ -176,6 +178,14 @@ func _wall_seg(parent: Node3D, axis_along: String, fixed: float, a: float, b: fl
 		_mesh_box(parent, Vector3((a + b) / 2.0, (ya + yb) / 2.0, fixed + off), Vector3(len, yb - ya, t), mat)
 	else:
 		_mesh_box(parent, Vector3(fixed + off, (ya + yb) / 2.0, (a + b) / 2.0), Vector3(t, yb - ya, len), mat)
+	if base and yb - ya > 1.5:
+		if _base_mat == null:
+			_base_mat = Mats.color(Color(0.16, 0.12, 0.09), 0.5)
+		var bo := side_sign * (t + 0.014)
+		if axis_along == "x":
+			_mesh_box(parent, Vector3((a + b) / 2.0, ya + 0.07, fixed + bo), Vector3(len, 0.14, 0.028), _base_mat, false)
+		else:
+			_mesh_box(parent, Vector3(fixed + bo, ya + 0.07, (a + b) / 2.0), Vector3(0.028, 0.14, len), _base_mat, false)
 
 func _build_room(id: String) -> void:
 	var r: Dictionary = rooms[id]
@@ -198,6 +208,15 @@ func _build_room(id: String) -> void:
 	# рампа лестницы
 	if r.ramp != "":
 		_build_ramp(holder, r)
+	# окна на внешних стенах, потолочная лампа
+	if y >= -0.5 and r.ramp == "" and not r.get("nowin", false) and r.h <= 3.6:
+		for side in ["N", "S", "W", "E"]:
+			if _side_free(id, side):
+				_make_window(holder, r, side)
+	if r.light > 0.0 and r.ramp == "" and y >= -0.5 and r.h <= 3.6:
+		var cl := Props.make("ceilinglamp")
+		cl.position = Vector3(c.x, y + r.h - 0.5, c.y)
+		holder.add_child(cl)
 	# свет
 	if r.light > 0.0:
 		var li := OmniLight3D.new()
@@ -211,6 +230,56 @@ func _build_room(id: String) -> void:
 		root.add_child(li)
 		lights.append(li)
 		r.light_node = li
+
+func _side_free(id: String, side: String) -> bool:
+	var rc: Rect2 = rooms[id].rect
+	var len := rc.size.x if side in ["N", "S"] else rc.size.y
+	if len < 6.0:
+		return false
+	var line := rc.position.y if side == "N" else (rc.end.y if side == "S" else (rc.position.x if side == "W" else rc.end.x))
+	var axis := "z" if side in ["N", "S"] else "x"
+	for d in doors:
+		if (d.a == id or d.b == id) and d.axis == axis and absf(d.line - line) < 0.06:
+			return false
+	for oid in rooms:
+		if oid == id:
+			continue
+		var o: Rect2 = rooms[oid].rect
+		if side in ["N", "S"]:
+			if absf((o.end.y if side == "N" else o.position.y) - line) < 0.06 and minf(o.end.x, rc.end.x) - maxf(o.position.x, rc.position.x) > 0.5:
+				return false
+		else:
+			if absf((o.end.x if side == "W" else o.position.x) - line) < 0.06 and minf(o.end.y, rc.end.y) - maxf(o.position.y, rc.position.y) > 0.5:
+				return false
+	return true
+
+func _make_window(holder: Node3D, r: Dictionary, side: String) -> void:
+	var rc: Rect2 = r.rect
+	var pos := wp(r.id, side, 0.5, 0.0, 0.0)
+	var n := Node3D.new()
+	var inner := WALL_T + 0.01
+	n.position = pos + side_normal(side) * inner + Vector3(0, r.y + 1.0, 0)
+	n.position.y = r.y + 1.0
+	n.rotation_degrees.y = side_yaw(side)
+	holder.add_child(n)
+	var fr := Mats.color(Color(0.55, 0.5, 0.42), 0.6)
+	var w := 1.3; var h := 1.3
+	Props.box(n, Vector3(w, h, 0.02), Vector3(0, h / 2, 0.0), Mats.color(Color(0.05, 0.07, 0.13), 0.1, 0.8))
+	for sx in [-1, 1]:
+		Props.box(n, Vector3(0.07, h + 0.1, 0.06), Vector3(sx * (w / 2 + 0.03), h / 2, 0.03), fr)
+	Props.box(n, Vector3(w + 0.2, 0.07, 0.07), Vector3(0, h + 0.04, 0.03), fr)
+	Props.box(n, Vector3(w + 0.26, 0.06, 0.12), Vector3(0, -0.02, 0.05), fr)
+	Props.box(n, Vector3(0.04, h, 0.03), Vector3(0, h / 2, 0.02), fr)
+	Props.box(n, Vector3(w, 0.04, 0.03), Vector3(0, h / 2, 0.02), fr)
+	var curt := Mats.tex("fabric", 1.2, Color(0.4, 0.15, 0.17), 1.0)
+	for sx2 in [-1, 1]:
+		Props.box(n, Vector3(0.32, h + 0.5, 0.07), Vector3(sx2 * (w / 2 + 0.2), h / 2 + 0.1, 0.07), curt)
+	var li := OmniLight3D.new()
+	li.position = Vector3(0, h / 2, 0.8)
+	li.light_color = Color(0.5, 0.6, 1.0)
+	li.light_energy = 0.35
+	li.omni_range = 4.0
+	n.add_child(li)
 
 func _build_ramp(holder: Node3D, r: Dictionary) -> void:
 	var rc: Rect2 = r.rect
@@ -373,12 +442,48 @@ func random_room() -> String:
 	return keys[randi() % keys.size()]
 
 # ------------------------------------------------ объекты
+const NO_KEEPOUT := ["rug", "picture", "mirror", "clock", "paper", "key", "phone", "tape", "badge", "teddy", "window", "candle", "bag", "radio", "lamp_fix", "bars"]
+
 func prop(kind: String, pos: Vector3, yaw := 0.0, opts := {}) -> Node3D:
 	var n := Props.make(kind, opts)
 	n.position = pos
 	n.rotation_degrees.y = yaw
 	root.add_child(n)
+	if not (kind in NO_KEEPOUT) and not opts.get("keep", false):
+		_clear_doors(n)
 	return n
+
+func _prop_radius(n: Node3D) -> float:
+	if n.has_meta("size"):
+		var sz: Vector3 = n.get_meta("size")
+		return maxf(sz.x, sz.z) * 0.5
+	for c in n.get_children():
+		if c is StaticBody3D:
+			for cc in c.get_children():
+				if cc is CollisionShape3D and cc.shape is BoxShape3D:
+					var b: Vector3 = cc.shape.size
+					return maxf(b.x, b.z) * 0.5
+	return 0.3
+
+## Не даём мебели перекрывать дверные проёмы: сдвигаем вдоль стены.
+func _clear_doors(n: Node3D) -> void:
+	var r := _prop_radius(n)
+	for iter in 60:
+		var moved := false
+		for d in doors:
+			var along := n.position.z if d.axis == "x" else n.position.x
+			var across := n.position.x if d.axis == "x" else n.position.z
+			var half: float = d.w / 2.0 + 0.45 + r
+			var depth: float = 1.5 + r
+			if absf(across - d.line) < depth and absf(along - d.center) < half and absf(n.position.y - d.y) < 3.0:
+				var sgn := 1.0 if along >= d.center else -1.0
+				if d.axis == "x":
+					n.position.z += sgn * 0.2
+				else:
+					n.position.x += sgn * 0.2
+				moved = true
+		if not moved:
+			return
 
 func lamp_light(pos: Vector3, color := Color(1, 0.8, 0.5), energy := 0.8, rng := 5.0) -> OmniLight3D:
 	var li := OmniLight3D.new()
