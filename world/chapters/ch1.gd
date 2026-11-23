@@ -11,7 +11,7 @@ var kettle_done := false
 func build(L: Level) -> void:
 	var b := L.b
 	var legend := {
-		"Y": {"name": "Двор", "floor": "floor_conc", "wall": "wall_brick", "ceil": "wall_grey", "light": 0.6, "light_color": Color(0.6, 0.7, 1.0), "h": 4.0, "wall_tint": Color(0.5, 0.5, 0.55)},
+		"Y": {"name": "Двор", "floor": "floor_conc", "wall": "wall_brick", "ceil": "wall_grey", "light": 1.4, "light_color": Color(0.7, 0.78, 1.0), "h": 4.0, "wall_tint": Color(0.5, 0.5, 0.55)},
 		"H": {"name": "Прихожая", "floor": "floor_wood", "wall": "wall_paper", "light": 0.9},
 		"K": {"name": "Кухня", "floor": "floor_tile", "wall": "wall_plaster", "wall_tint": Color(0.8, 0.8, 0.7), "light": 1.1},
 		"P": {"name": "Кладовая", "floor": "floor_lino", "wall": "wall_grey", "light": 0.6},

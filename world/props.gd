@@ -33,6 +33,14 @@ static func sph(parent: Node, r: float, pos: Vector3, mat: Material, sy := 1.0) 
 	m.scale.y = sy
 	return m
 
+static func cap(parent: Node, r: float, h: float, pos: Vector3, mat: Material, sx := 1.0, sz := 1.0) -> MeshInstance3D:
+	var c := CapsuleMesh.new()
+	c.radius = r; c.height = maxf(h, r * 2.0 + 0.01)
+	c.radial_segments = 12; c.rings = 4
+	var m := _mi(parent, c, pos, mat)
+	m.scale = Vector3(sx, 1.0, sz)
+	return m
+
 static func col(root: Node3D, size: Vector3, center: Vector3, layer := 8) -> StaticBody3D:
 	var sb := StaticBody3D.new()
 	sb.collision_layer = layer
@@ -45,7 +53,96 @@ static func col(root: Node3D, size: Vector3, center: Vector3, layer := 8) -> Sta
 	root.add_child(sb)
 	return sb
 
+# Реалистичные модели Poly Haven (CC0). fit: h — по высоте, w — по большей стороне основания, box — по трём осям.
+const MODELS := {
+	"sofa": {"id": "sofa_02", "fit": "w", "v": 2.0},
+	"armchair": {"id": "ArmChair_01", "fit": "h", "v": 0.95},
+	"table": {"id": "WoodenTable_01", "fit": "box", "v": Vector3(1.4, 0.76, 0.8)},
+	"chair": {"id": "WoodenChair_01", "fit": "h", "v": 0.92},
+	"stool": {"id": "wooden_stool_01", "fit": "h", "v": 0.5},
+	"bed": {"id": "old_bed_frame", "fit": "w", "v": 2.1},
+	"wardrobe": {"id": "vintage_cabinet_01", "fit": "h", "v": 2.0},
+	"bookshelf": {"id": "wooden_bookshelf_worn", "fit": "h", "v": 2.0},
+	"dresser": {"id": "drawer_cabinet", "fit": "h", "v": 0.95},
+	"stove": {"id": "electric_stove", "fit": "h", "v": 0.9},
+	"mirror": {"id": "ornate_mirror_01", "fit": "h", "v": 1.5},
+	"radio": {"id": "vintage_radio_transceiver", "fit": "h", "v": 0.3},
+	"plant": {"id": "potted_plant_01", "fit": "h", "v": 1.1},
+	"bucket": {"id": "wooden_bucket_01", "fit": "h", "v": 0.35},
+	"crate": {"id": "wooden_crate_01", "fit": "h", "v": 0.6},
+	"box": {"id": "cardboard_box_01", "fit": "h", "v": 0.45},
+	"bag": {"id": "trashbag", "fit": "h", "v": 0.55},
+	"kettle": {"id": "vintage_electric_kettle", "fit": "h", "v": 0.22},
+	"suitcase": {"id": "vintage_suitcase", "fit": "h", "v": 0.55},
+	"statue": {"id": "gothic_statue", "fit": "h", "v": 1.8},
+	"nightstand": {"id": "ClassicNightstand_01", "fit": "h", "v": 0.6},
+	"vase": {"id": "ceramic_vase_01", "fit": "h", "v": 0.35},
+	"books": {"id": "book_encyclopedia_set_01", "fit": "w", "v": 0.4},
+}
+static var _scenes: Dictionary = {}
+
+static func _aabb_rec(n: Node3D, parent_xf: Transform3D, acc: Array) -> void:
+	var xf := parent_xf * n.transform
+	if n is MeshInstance3D and n.mesh:
+		var a: AABB = xf * n.get_aabb()
+		acc[0] = a if acc[0] == null else (acc[0] as AABB).merge(a)
+	for c in n.get_children():
+		if c is Node3D:
+			_aabb_rec(c, xf, acc)
+
+static func model(kind: String, o := {}) -> Node3D:
+	if not MODELS.has(kind):
+		return null
+	var m: Dictionary = MODELS[kind]
+	var path := "res://assets/models/%s/%s.gltf" % [m.id, m.id]
+	if not _scenes.has(path):
+		_scenes[path] = load(path) if ResourceLoader.exists(path) else null
+	var ps: PackedScene = _scenes[path]
+	if ps == null:
+		return null
+	var inst: Node3D = ps.instantiate()
+	var acc := [null]
+	_aabb_rec(inst, Transform3D.IDENTITY, acc)
+	if acc[0] == null:
+		inst.queue_free()
+		return null
+	var bb: AABB = acc[0]
+	var sc := Vector3.ONE
+	match m.fit:
+		"h": sc = Vector3.ONE * (float(m.v) / maxf(bb.size.y, 0.001))
+		"w": sc = Vector3.ONE * (float(m.v) / maxf(maxf(bb.size.x, bb.size.z), 0.001))
+		"box":
+			var v: Vector3 = m.v
+			if o.has("w"): v.x = o.w
+			if o.has("d"): v.z = o.d
+			sc = Vector3(v.x / maxf(bb.size.x, 0.001), v.y / maxf(bb.size.y, 0.001), v.z / maxf(bb.size.z, 0.001))
+	if o.has("s") and kind in ["crate", "box"]:
+		sc = Vector3.ONE * (float(o.s) / maxf(bb.size.y, 0.001))
+	var holder := Node3D.new()
+	holder.name = kind
+	var yaw: float = float(m.get("yaw", 0.0))
+	inst.scale = sc
+	var ctr := bb.get_center()
+	inst.position = Vector3(-ctr.x * sc.x, -bb.position.y * sc.y, -ctr.z * sc.z)
+	holder.add_child(inst)
+	var size := bb.size * sc
+	holder.set_meta("size", size)
+	if kind == "bed":
+		var fab := Mats.tex("fabric", 0.9, o.get("tint", Color(0.62, 0.6, 0.66)))
+		var long_x := size.x >= size.z
+		var ms := Vector3(size.x - 0.12, 0.2, size.z - 0.12)
+		box(holder, ms, Vector3(0, 0.42, 0), Mats.color(Color(0.82, 0.8, 0.74), 0.95))
+		box(holder, Vector3(ms.x if not long_x else ms.x * 0.62, 0.07, ms.z if long_x else ms.z * 0.62), Vector3((ms.x * 0.18) if long_x else 0.0, 0.55, 0.0 if long_x else (ms.z * 0.18)), fab)
+		box(holder, Vector3(0.4, 0.12, 0.7) if long_x else Vector3(0.7, 0.12, 0.4), Vector3(-ms.x * 0.38, 0.58, 0.0) if long_x else Vector3(0.0, 0.58, -ms.z * 0.38), Mats.color(Color(0.92, 0.92, 0.9), 0.95))
+	if kind not in ["bag", "mirror", "radio", "kettle", "books", "vase"]:
+		col(holder, size, Vector3(0, size.y / 2.0, 0))
+	return holder
+
 static func make(kind: String, o := {}) -> Node3D:
+	var mdl := model(kind, o)
+	if mdl != null:
+		mdl.name = kind
+		return mdl
 	var r := Node3D.new()
 	r.name = kind
 	var wood := Mats.tex("wood", 0.8, Color(0.75, 0.62, 0.5))

@@ -145,7 +145,7 @@ static func yard(L: Level, room: String, trash_task := "trash") -> void:
 	Common.van_exit(L, b.P(room, 0.4, 0.62), 90)
 	b.lamp_light(b.P(room, 0.9, 0.5, 3.2), Color(1, 0.9, 0.6), 0.6, 9.0)
 
-const YARD_SPEC := {"name": "Двор", "floor": "floor_conc", "wall": "wall_brick", "ceil": "wall_grey", "light": 0.6, "light_color": Color(0.6, 0.7, 1.0), "h": 4.0, "wall_tint": Color(0.5, 0.5, 0.55)}
+const YARD_SPEC := {"name": "Двор", "floor": "floor_conc", "wall": "wall_brick", "ceil": "wall_grey", "light": 1.4, "light_color": Color(0.7, 0.78, 1.0), "h": 4.0, "wall_tint": Color(0.5, 0.5, 0.55)}
 
 ## Сумма требований по умолчанию для finish_gate.
 static func gate(L: Level, min_progress: float, flag_name := "") -> Array:

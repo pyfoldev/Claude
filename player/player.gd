@@ -144,7 +144,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not get_tree().paused:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		look_delta += event.relative * 0.25
+		look_delta += event.relative * 0.35
 	if event is InputEventMouseButton and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			action_held = event.pressed
@@ -176,7 +176,7 @@ func _physics_process(delta: float) -> void:
 		_stop_tool_loops()
 		return
 	# --- взгляд ---
-	var sens := 0.12 * float(Game.settings.sens)
+	var sens := 0.32 * float(Game.settings.sens)
 	var inv := -1.0 if Game.settings.invert else 1.0
 	if not look_lock:
 		rotation_degrees.y -= look_delta.x * sens

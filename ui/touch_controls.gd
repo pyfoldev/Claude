@@ -15,8 +15,8 @@ const STICK_R := 110.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	resized.connect(_layout)
+	position = Vector2.ZERO
+	size = get_viewport().get_visible_rect().size
 	_layout()
 
 func _layout() -> void:
@@ -26,7 +26,7 @@ func _layout() -> void:
 		"action": {"c": Vector2(s.x - 140 * k, s.y - 150 * k), "r": 82 * k, "label": "ДЕЙСТВИЕ"},
 		"flash": {"c": Vector2(s.x - 300 * k, s.y - 95 * k), "r": 52 * k, "label": "ФОНАРЬ"},
 		"crouch": {"c": Vector2(s.x - 300 * k, s.y - 225 * k), "r": 48 * k, "label": "ПРИСЕСТЬ"},
-		"tool_next": {"c": Vector2(s.x - 140 * k, s.y - 320 * k), "r": 48 * k, "label": "СМЕНА"},
+		"tool_next": {"c": Vector2(s.x - 300 * k, s.y - 355 * k), "r": 48 * k, "label": "СМЕНА"},
 		"notebook": {"c": Vector2(s.x - 70, 62), "r": 40, "label": "БЛОКНОТ"},
 		"pause": {"c": Vector2(s.x - 160, 62), "r": 34, "label": "II"},
 	}
@@ -76,7 +76,7 @@ func _input(event: InputEvent) -> void:
 			if v.length() > 1.0:
 				stick_origin = stick_pos - v.normalized() * STICK_R
 		elif event.index == look_id:
-			player.look_delta += (p2 - look_last) * 0.55
+			player.look_delta += (p2 - look_last) * 1.0
 			look_last = p2
 		queue_redraw()
 
@@ -103,6 +103,12 @@ func _btn_down(name: String, down: bool) -> void:
 			if down: hud.toggle_pause()
 
 func _process(_d: float) -> void:
+	var vs := get_viewport().get_visible_rect().size
+	if size != vs:
+		position = Vector2.ZERO
+		size = vs
+		_layout()
+		queue_redraw()
 	if player and (stick_id != -1 or not btn_touch.is_empty()):
 		queue_redraw()
 
