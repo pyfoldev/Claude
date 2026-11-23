@@ -33,7 +33,7 @@ func build(L: Level) -> void:
 		"k": {"name": "Зеркальная комната", "floor": "floor_wood", "wall": "wall_grey", "light": 0.4},
 	}
 	b.layout(["nnmm", "uuuu", "kkk."], up, 3.0, 4.0, Vector2(32, 8))
-	b.doors_from(["Y-H", "H-D", "D-K", "H-G", "G-C", "C-S", "H-W", "W-G", "G-D", "K-C", "S-u", "u-n", "u-m", "u-k"])
+	b.doors_from(["Y-H", "H-D", "D-K", "H-G", "G-C", "G-S", "H-W", "W-G", "G-D", "K-C", "S-u", "u-n", "u-m", "u-k"])
 	b.finish()
 	b.spawn = b.P("Y", 0.7, 0.5) + Vector3(0, 0.1, 0)
 	b.spawn_yaw = 90.0 + 180.0
