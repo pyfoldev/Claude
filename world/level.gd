@@ -303,6 +303,11 @@ func reveal_note(id: String) -> void:
 		nn.visible = true
 		b.notes_nodes[id].it.enabled = true
 
+func hide_note_later(id: String) -> void:
+	if b.notes_nodes.has(id):
+		b.notes_nodes[id].node.visible = false
+		b.notes_nodes[id].it.enabled = false
+
 func hide_note(id: String) -> void:
 	if b.notes_nodes.has(id):
 		b.notes_nodes[id].node.visible = false

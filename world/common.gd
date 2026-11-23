@@ -135,3 +135,44 @@ static func eyes_flash(L: Level, node: Node3D, local_pos: Vector3, dur := 0.7) -
 	node.add_child(eyes)
 	Audio.sfx("sting_soft", node.global_position)
 	L.get_tree().create_timer(dur).timeout.connect(eyes.queue_free)
+
+## Двор с фургоном, ведром, ящиком и контейнером.
+static func yard(L: Level, room: String, trash_task := "trash") -> void:
+	var b := L.b
+	Common.bucket(L, b.P(room, 0.55, 0.45))
+	Common.supply(L, b.P(room, 0.45, 0.3), 90)
+	Common.dumpster(L, b.P(room, 0.8, 0.85), trash_task, 180)
+	Common.van_exit(L, b.P(room, 0.4, 0.62), 90)
+	b.lamp_light(b.P(room, 0.9, 0.5, 3.2), Color(1, 0.9, 0.6), 0.6, 9.0)
+
+const YARD_SPEC := {"name": "Двор", "floor": "floor_conc", "wall": "wall_brick", "ceil": "wall_grey", "light": 0.6, "light_color": Color(0.6, 0.7, 1.0), "h": 4.0, "wall_tint": Color(0.5, 0.5, 0.55)}
+
+## Сумма требований по умолчанию для finish_gate.
+static func gate(L: Level, min_progress: float, flag_name := "") -> Array:
+	if flag_name != "" and not Game.flag(flag_name):
+		return [false, "Работа ещё не закончена."]
+	if L.progress() < min_progress:
+		return [false, "Слишком грязно: нужно убрать минимум %d%%." % int(min_progress * 100.0)]
+	return [true, ""]
+
+static func blackout(L: Level, on: bool) -> void:
+	for l in L.b.lights:
+		if on:
+			l.set_meta("saved", l.light_energy)
+			l.light_energy = 0.0
+		else:
+			l.light_energy = l.get_meta("base", 1.0)
+	if on:
+		Audio.sfx("power_down", null, 0.0)
+	else:
+		Audio.sfx("power_up", null, -2.0)
+
+## Предмет, который можно подобрать (ключ, предохранитель, печать…)
+static func pickup(L: Level, kind: String, pos: Vector3, prompt: String, cb: Callable, popts := {}) -> Node3D:
+	var n := L.b.prop(kind, pos, 0, popts)
+	var it: Interactable = L.b.interact(pos + Vector3(0, 0.15, 0), Vector3(0.5, 0.4, 0.5), prompt, Callable())
+	it.callback = func(p):
+		it.enabled = false
+		n.queue_free()
+		cb.call(p)
+	return n

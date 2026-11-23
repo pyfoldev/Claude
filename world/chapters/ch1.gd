@@ -168,7 +168,6 @@ func build(L: Level) -> void:
 	var mp := b.wp("B", "N", 0.7, 0.0, 1.5)
 	b.prop("mirror", mp + Vector3(0, 0, 0.1), 0)
 	var mg := b.dirt("glass", mp + Vector3(0, 0, 0.14), Vector2(0.8, 1.3), Vector3(0, 0, 1), "mirror", {"id": "bath_mirror"})
-	mg.basis = Basis(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, -1, 0))
 	b.floor_dirt("mud", "B", Vector2(0.4, 0.5), Vector2(0.9, 0.9), "floor")
 
 	# ---------- верхний этаж ----------
