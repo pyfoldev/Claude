@@ -16,6 +16,20 @@ const cache = new Map();
 const COARENA = { id: 'coarena', name: 'Coarena', baseUrl: 'https://coarena.ai/api/v1' };
 const GROQ = { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' };
 const groqModels = () => (process.env.GROQ_MODELS || 'openai/gpt-oss-120b').split(',').map((x) => x.trim()).filter(Boolean);
+// Локальная модель на сервере (llama.cpp `llama-server`, OpenAI-совместимый /v1): Qwen3.5-2B для обычного чата, документов и анализа фото. Включается LOCAL_LLM_URL.
+const LOCAL = { id: 'local', name: 'Локальная (Qwen3.5-2B)', baseUrl: (process.env.LOCAL_LLM_URL || '').replace(/\/$/, '') };
+export const localModel = () => process.env.LOCAL_LLM_MODEL || 'qwen3.5-2b';
+export const localVision = () => process.env.LOCAL_LLM_VISION !== '0';
+let _localUp = false, _localAt = 0;
+/** Сервер локальной модели жив? (кэш на 15 с, обновляется в фоне — вызов не блокирует). */
+export function localUp() {
+  if (!LOCAL.baseUrl || process.env.LOCAL_LLM === '0') return false;
+  if (Date.now() - _localAt > 15000) {
+    _localAt = Date.now();
+    fetch(LOCAL.baseUrl.replace(/\/v1$/, '') + '/health', { signal: AbortSignal.timeout(2500) }).then((r) => { _localUp = r.ok; }).catch(() => { _localUp = false; });
+  }
+  return _localUp;
+}
 const UNO = { id: 'unorouter', name: 'UnoRouter', baseUrl: 'https://api.unorouter.com/v1' };
 const UNO_DEFAULT = 'kimi-k3.1-pro:free,claude-haiku-5-5:free,gemini-3.6-flash:free,deepseek-v4.1-flash:free,gpt-oss-120b:free,glm-5.3-flash:free,qwen3.5-397b-a17b:free,nemotron-3-ultra-550b-a55b:free,minimax-m3.1-flash:free';
 const unoModels = () => (process.env.UNOROUTER_MODELS || UNO_DEFAULT).split(',').map((x) => x.trim()).filter(Boolean);
@@ -42,6 +56,7 @@ export const cachedModels = (id) => cache.get(id)?.models || [];
 
 export function resolveProvider(user, id) {
   if (!id || id === 'river') return { id: 'river', ...riverProv(), name: 'river.ai' };
+  if (id === 'local' && LOCAL.baseUrl) return { ...LOCAL, apiKey: 'none', effort: false };
   if (id === 'unorouter' && process.env.UNOROUTER_API_KEY) return { ...UNO, apiKey: process.env.UNOROUTER_API_KEY, effort: false };
   if (id === 'perplexity' && pplxUp(user)) return { id: 'perplexity', name: 'Perplexity Agent', baseUrl: 'https://api.perplexity.ai', apiKey: '', effort: false };
   if (id === 'groq' && bridgeHas(user.id, 'api.groq.com')) return { ...GROQ, apiKey: '', effort: true, fetcher: (url, init) => bridgeFetch(user.id, url, init) };   // запросы выполняет приложение (ключ Groq только на телефоне)
@@ -60,6 +75,7 @@ export async function providersFor(user) {
   const rp = riverProv();
   const rm = await listModels(rp, 'river');
   out.push({ id: 'river', name: 'river.ai', builtin: true, baseUrl: rp.baseUrl, effort: true, models: rm.filter((m) => config.river.allowed.includes(m)) });
+  if (LOCAL.baseUrl && process.env.LOCAL_LLM !== '0') out.push({ id: 'local', name: LOCAL.name, builtin: true, baseUrl: LOCAL.baseUrl, effort: false, models: [localModel()] });
   if (process.env.COARENA_API_KEY) {
     const all = await listModels({ ...COARENA, apiKey: process.env.COARENA_API_KEY }, 'coarena');
     const want = coarenaModels();

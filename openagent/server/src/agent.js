@@ -10,7 +10,7 @@ import { prepareMcp } from './mcp.js';
 import { scenarioGuide } from './scenarios.js';
 import { workspaceOf, codeDir, projectDir } from './workspace.js';
 import { searchMemories, coreMemories, extractMemories } from './memory.js';
-import { resolveProvider, groqUp } from './providers.js';
+import { resolveProvider, groqUp, localUp, localModel, localVision } from './providers.js';
 import { setStarter } from './scheduler.js';
 import { extractText, DOC_EXT } from './extract.js';
 import { AUDIO_EXT } from './transcribe.js';
@@ -315,6 +315,17 @@ const withTimeout = (p, ms, fallback) => Promise.race([p, new Promise((r) => set
 export function startRun(user, conv, text, attachments, opts = {}) {
   const { voice = false } = opts;
   let prov = resolveProvider(user, voice ? 'river' : opts.provider);
+  // Маршрутизация по задаче: обычный чат, документы и фото → локальная Qwen3.5-2B на сервере; Code, голос, автоматизации и осознанно выбранные другие модели → как раньше (river.ai и др.).
+  // «По умолчанию» = провайдер river и стандартная (быстрая) модель — приложение шлёт именно это, если пользователь ничего не выбирал.
+  let routedLocal = false;
+  {
+    const isDefaultRiver = prov.id === 'river' && (!opts.model || [config.river.fastModel, config.river.model, 'fast', 'auto'].includes(opts.model));
+    const hasImg = (attachments || []).some((a) => a.mime?.startsWith('image/'));
+    if (!voice && !opts.automation && conv.mode !== 'code' && localUp() && (opts.provider === 'local' || isDefaultRiver) && (!hasImg || localVision())) {
+      const lp = resolveProvider(user, 'local');
+      if (lp?.id === 'local') { prov = lp; opts = { ...opts, model: localModel() }; routedLocal = true; }
+    }
+  }
   let effort = voice ? 'auto' : (['low', 'high'].includes(opts.effort) ? opts.effort : 'auto');   // в звонке reasoning_effort не шлём: по замерам он добавлял 0,5–0,9 с до первого слова
   let model = opts.model;
   const hasImages = (attachments || []).some((a) => a.mime?.startsWith('image/'));
@@ -328,7 +339,8 @@ export function startRun(user, conv, text, attachments, opts = {}) {
     else if (!model || !config.river.allowed.includes(model)) model = config.river.fastModel;
     if (hasImages && !config.river.visionModels.includes(model)) model = config.river.visionModel;
   } else if (!model) throw new Error('Для своего провайдера выберите модель');
-  const isVision = prov.id !== 'river' || config.river.visionModels.includes(model);
+  if (routedLocal) alts = [{ prov: resolveProvider(user, 'river'), model: config.river.fastModel }];   // локальная модель не ответила до первого слова → river.ai
+  const isVision = prov.id === 'local' ? localVision() : prov.id !== 'river' || config.river.visionModels.includes(model);
   const automation = !!opts.automation;
   const autonomy = opts.autonomy === 'auto' ? 'auto' : 'ask';
   const MAX_STEPS = automation ? 12 : STEPS[effort];
