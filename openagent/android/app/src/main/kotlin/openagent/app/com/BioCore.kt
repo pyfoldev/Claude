@@ -64,6 +64,16 @@ object BioVault {
     fun anyEnrolled(ctx: Context) = has(ctx, "voice") || has(ctx, "face")
 }
 
+/** Что происходит с кадрами: показывается на экране проверки и в настройках, чтобы причину сбоя было видно, а не «лица не видно». */
+object BioDiag {
+    @Volatile var status = ""
+    @Volatile var rot = 0                     // какой поворот кадра сработал в прошлый раз (самонастройка)
+    fun err(e: Throwable) { status = "Сбой: ${e.javaClass.simpleName}: ${e.message}".take(180) }
+}
+private fun rotated(b: Bitmap, deg: Int): Bitmap = if (deg == 0) b else Bitmap.createBitmap(b, 0, 0, b.width, b.height, Matrix().apply { postRotate(deg.toFloat()) }, true)
+private val ROTS = listOf(0, 90, 270, 180)
+private fun rotOrder() = (listOf(BioDiag.rot) + ROTS).distinct()
+
 object Onnx {
     val env: OrtEnvironment by lazy { OrtEnvironment.getEnvironment() }
     fun session(ctx: Context, asset: String): OrtSession {
@@ -118,27 +128,36 @@ object FacePrint {
     private var sess: OrtSession? = null
     private val TPL = floatArrayOf(38.2946f, 51.6963f, 73.5318f, 51.5014f, 56.1396f, 92.2848f)   // ArcFace 112×112: левый глаз, правый глаз, центр рта
     @Synchronized private fun detector(ctx: Context) = det ?: FaceDetector.createFromOptions(ctx, FaceDetector.FaceDetectorOptions.builder()
-        .setBaseOptions(BaseOptions.builder().setModelAssetPath("blaze_face_short_range.tflite").build()).setRunningMode(RunningMode.IMAGE).setMinDetectionConfidence(0.6f).build()).also { det = it }
+        .setBaseOptions(BaseOptions.builder().setModelAssetPath("blaze_face_short_range.tflite").build()).setRunningMode(RunningMode.IMAGE).setMinDetectionConfidence(0.4f).build()).also { det = it }
     @Synchronized private fun s(ctx: Context) = sess ?: Onnx.session(ctx, "mobilefacenet.onnx").also { sess = it }
 
-    /** Кадр → лицо 112×112, выровненное по глазам и рту; null — лица нет, оно слишком мелкое или повёрнуто. */
+    /** Кадр → лицо 112×112, выровненное по глазам и рту; null — лица нет. Если лицо не нашлось, пробуем повернуть кадр (камеры по-разному отдают ориентацию) и запоминаем удачный поворот. */
     fun align(ctx: Context, src: Bitmap): Bitmap? {
-        val bmp = if (src.config == Bitmap.Config.ARGB_8888) src else src.copy(Bitmap.Config.ARGB_8888, false)
-        val d = detector(ctx).detect(BitmapImageBuilder(bmp).build()).detections().maxByOrNull { it.categories()[0].score() } ?: return null
-        val kp = d.keypoints().orElse(null) ?: return null
-        if (kp.size < 4 || d.boundingBox().width() < 90f) return null
-        val w = bmp.width.toFloat(); val h = bmp.height.toFloat()
-        val s = floatArrayOf(kp[0].x() * w, kp[0].y() * h, kp[1].x() * w, kp[1].y() * h, kp[3].x() * w, kp[3].y() * h)
-        // преобразование подобия (поворот+масштаб+сдвиг) по трём точкам, метод наименьших квадратов
-        val sx = (s[0] + s[2] + s[4]) / 3; val sy = (s[1] + s[3] + s[5]) / 3; val dx = (TPL[0] + TPL[2] + TPL[4]) / 3; val dy = (TPL[1] + TPL[3] + TPL[5]) / 3
-        var num1 = 0f; var num2 = 0f; var den = 0f
-        for (i in 0 until 3) { val a = s[2 * i] - sx; val b = s[2 * i + 1] - sy; val c = TPL[2 * i] - dx; val e = TPL[2 * i + 1] - dy; num1 += a * c + b * e; num2 += a * e - b * c; den += a * a + b * b }
-        if (den < 1f) return null
-        val ca = num1 / den; val cb = num2 / den
-        val m = Matrix().apply { setValues(floatArrayOf(ca, -cb, dx - (ca * sx - cb * sy), cb, ca, dy - (cb * sx + ca * sy), 0f, 0f, 1f)) }
-        val out = Bitmap.createBitmap(112, 112, Bitmap.Config.ARGB_8888)
-        Canvas(out).drawBitmap(bmp, m, Paint(Paint.FILTER_BITMAP_FLAG))
-        return out
+        try {
+            for (rot in rotOrder()) {
+                val bmp = rotated(if (src.config == Bitmap.Config.ARGB_8888) src else src.copy(Bitmap.Config.ARGB_8888, false), rot)
+                val d = detector(ctx).detect(BitmapImageBuilder(bmp).build()).detections().maxByOrNull { it.categories()[0].score() } ?: continue
+                val kp = d.keypoints().orElse(null)
+                if (kp == null || kp.size < 4) { BioDiag.status = "лицо найдено, но без ключевых точек"; continue }
+                val w = bmp.width.toFloat(); val h = bmp.height.toFloat()
+                val fw = d.boundingBox().width().let { if (it <= 1.5f) it * w else it }       // на случай нормированных координат
+                if (fw < 40f) { BioDiag.status = "лицо слишком далеко (%.0f px) — приблизьтесь".format(fw); continue }
+                BioDiag.rot = rot; BioDiag.status = "лицо видно (кадр ${src.width}×${src.height}, поворот $rot°, ширина %.0f px)".format(fw)
+                val s = floatArrayOf(kp[0].x() * w, kp[0].y() * h, kp[1].x() * w, kp[1].y() * h, kp[3].x() * w, kp[3].y() * h)
+                // преобразование подобия (поворот+масштаб+сдвиг) по трём точкам, метод наименьших квадратов
+                val sx = (s[0] + s[2] + s[4]) / 3; val sy = (s[1] + s[3] + s[5]) / 3; val dx = (TPL[0] + TPL[2] + TPL[4]) / 3; val dy = (TPL[1] + TPL[3] + TPL[5]) / 3
+                var num1 = 0f; var num2 = 0f; var den = 0f
+                for (i in 0 until 3) { val a = s[2 * i] - sx; val b = s[2 * i + 1] - sy; val c = TPL[2 * i] - dx; val e = TPL[2 * i + 1] - dy; num1 += a * c + b * e; num2 += a * e - b * c; den += a * a + b * b }
+                if (den < 1f) continue
+                val ca = num1 / den; val cb = num2 / den
+                val m = Matrix().apply { setValues(floatArrayOf(ca, -cb, dx - (ca * sx - cb * sy), cb, ca, dy - (cb * sx + ca * sy), 0f, 0f, 1f)) }
+                val out = Bitmap.createBitmap(112, 112, Bitmap.Config.ARGB_8888)
+                Canvas(out).drawBitmap(bmp, m, Paint(Paint.FILTER_BITMAP_FLAG))
+                return out
+            }
+            if (!BioDiag.status.startsWith("лицо слишком") && !BioDiag.status.startsWith("лицо найдено")) BioDiag.status = "лица в кадре нет (кадр ${src.width}×${src.height}, пробовал повороты)"
+            return null
+        } catch (e: Throwable) { BioDiag.err(e); return null }
     }
 
     /** Выровненное лицо → вектор (128 чисел, L2). Модель принимает пару лиц — подаём одно и то же, берём первую строку. */
@@ -158,11 +177,21 @@ object FacePrint {
 object GestureRec {
     private var rec: GestureRecognizer? = null
     @Synchronized private fun r(ctx: Context) = rec ?: GestureRecognizer.createFromOptions(ctx, GestureRecognizer.GestureRecognizerOptions.builder()
-        .setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task").build()).setRunningMode(RunningMode.IMAGE).setNumHands(1).setMinHandDetectionConfidence(0.5f).build()).also { rec = it }
-    /** true, если в кадре жест «Victory» ✌️ с уверенностью ≥ 0,6. */
+        .setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task").build()).setRunningMode(RunningMode.IMAGE).setNumHands(1).setMinHandDetectionConfidence(0.4f).setMinHandPresenceConfidence(0.4f).build()).also { rec = it }
+    /** true, если в кадре жест «Victory» ✌️ с уверенностью ≥ 0,5. Рук нет → пробуем другие повороты кадра и запоминаем удачный. */
     fun isVictory(ctx: Context, frame: Bitmap): Boolean {
-        val bmp = if (frame.config == Bitmap.Config.ARGB_8888) frame else frame.copy(Bitmap.Config.ARGB_8888, false)
-        val g = r(ctx).recognize(BitmapImageBuilder(bmp).build()).gestures()
-        return g.isNotEmpty() && g[0].isNotEmpty() && g[0][0].categoryName() == "Victory" && g[0][0].score() >= 0.6f
+        try {
+            val base = if (frame.config == Bitmap.Config.ARGB_8888) frame else frame.copy(Bitmap.Config.ARGB_8888, false)
+            for (rot in rotOrder()) {
+                val res = r(ctx).recognize(BitmapImageBuilder(rotated(base, rot)).build())
+                if (res.landmarks().isEmpty()) continue
+                BioDiag.rot = rot
+                val g = res.gestures(); val top = g.firstOrNull()?.firstOrNull()
+                BioDiag.status = "рука видна: ${top?.categoryName() ?: "?"} %.2f (поворот $rot°)".format(top?.score() ?: 0f)
+                return top != null && top.categoryName() == "Victory" && top.score() >= 0.5f
+            }
+            BioDiag.status = "руки в кадре нет (кадр ${frame.width}×${frame.height})"
+            return false
+        } catch (e: Throwable) { BioDiag.err(e); return false }
     }
 }

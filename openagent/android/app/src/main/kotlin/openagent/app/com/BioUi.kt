@@ -126,7 +126,7 @@ fun BioGate(vm: AppVM, lock: Boolean) {
                     Box(Modifier.fillMaxWidth().aspectRatio(0.8f).clip(RoundedCornerShape(28.dp))) {
                         FrontCamera(Modifier.fillMaxSize(), fps = 3) { bmp ->
                             val sc = runCatching { FacePrint.verify(ctx, bmp) }.getOrNull()
-                            if (sc == null) { streak = 0; msg = "Лица не видно — смотрите в камеру" }
+                            if (sc == null) { streak = 0; msg = BioDiag.status.ifBlank { "Лица не видно — смотрите в камеру" } }
                             else if (sc >= BioThr.face(vm.bioStrict)) { streak++; msg = "Узнаю…"; if (streak >= 2) { streak = -99; pass() } }
                             else { streak = 0; msg = "Не вы (%.2f из нужных %.2f)".format(sc, BioThr.face(vm.bioStrict)) }
                         }
@@ -207,7 +207,7 @@ fun FaceEnrollDialog(vm: AppVM, onClose: () -> Unit) {
                     val now = SystemClock.elapsedRealtime()
                     if (embs.size < 6 && now - lastAt > 600) {
                         val f = runCatching { FacePrint.align(ctx, bmp) }.getOrNull()
-                        if (f == null) msg = "Лица не видно или оно далеко — приблизьтесь и смотрите в камеру" else {
+                        if (f == null) msg = BioDiag.status.ifBlank { "Лица не видно — смотрите в камеру" } else {
                             lastAt = now
                             runCatching { FacePrint.embed(ctx, f) }.getOrNull()?.let { embs.add(it) }
                             if (embs.size >= 6) {
@@ -252,7 +252,7 @@ fun BioSettings(vm: AppVM) {
         Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { Segmented(listOf("soft" to "Мягко", "normal" to "Обычно", "strict" to "Строго"), vm.bioStrict, vm::updBioStrict) }
         Text("Голос и лицо записываются в виде чисел-отпечатков (не записей и не фото), хранятся на телефоне под ключом Keystore. Это удобная блокировка, а не защита от целенаправленного взлома: запись голоса или фото владельца её обманут. Запасной вход — пароль телефона.", color = C.dim, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
     }
-    SwitchRow(Icons.Outlined.PanTool, "Включение жестом ✌️", "Показали «викторию» в камеру — открывается голосовой звонок. Работает, пока приложение открыто на экране (Android не даёт камере работать в фоне)", vm.gestureWake) { on ->
+    SwitchRow(Icons.Outlined.PanTool, "Включение жестом ✌️", "Показали «викторию» в камеру — открывается голосовой звонок. Работает, пока приложение открыто на экране (Android не даёт камере работать в фоне)" + (if (vm.gestureWake && BioDiag.status.isNotBlank()) "\nСейчас: ${BioDiag.status}" else ""), vm.gestureWake) { on ->
         if (on && !hasCam(ctx)) camPerm.launch(Manifest.permission.CAMERA) else vm.updGestureWake(on)
     }
 }
@@ -269,7 +269,7 @@ fun GestureWatcher(vm: AppVM) {
             val now = SystemClock.elapsedRealtime()
             val v = now > cooldown && runCatching { GestureRec.isVictory(ctx, bmp) }.getOrDefault(false)
             streak = if (v) streak + 1 else 0
-            if (streak >= 4) { streak = 0; cooldown = now + 6000; android.os.Handler(android.os.Looper.getMainLooper()).post { vm.voiceMuted = false; vm.startVoice() } }
+            if (streak >= 3) { streak = 0; cooldown = now + 6000; android.os.Handler(android.os.Looper.getMainLooper()).post { vm.voiceMuted = false; vm.startVoice() } }
         }
         onDispose { stop() }
     }
