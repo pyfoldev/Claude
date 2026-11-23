@@ -90,7 +90,7 @@ export function voiceAgentSession(ws, user, params) {
     const res = [];
     for (const a of fast.actions) {
       const r = String(await runPhone(a, text)); res.push(r);
-      if (!BAD.test(r)) done.set(JSON.stringify(a), { r, at: Date.now() });
+      if (!BAD.test(r)) done.set(a.action, { r, at: Date.now() });   // ключ — тип действия: повтор от Haiku с другими параметрами тоже не выполняем
     }
     return res;
   };
@@ -116,8 +116,9 @@ export function voiceAgentSession(ws, user, params) {
     let out;
     try {
       if (f.name === 'phone' && pendingFast) await Promise.race([pendingFast, new Promise((r) => setTimeout(r, 2000))]);
-      const dup = f.name === 'phone' ? done.get(JSON.stringify(args)) : null;
-      if (dup && Date.now() - dup.at < 30000) out = `Уже выполнено: ${dup.r}. Просто коротко подтверди пользователю.`;
+      const ALIAS = { open: 'open_app', launch: 'open_app', send_message: 'message', send: 'message', play_music: 'music_play' };
+      const dup = f.name === 'phone' ? done.get(ALIAS[args.action] || args.action) : null;   // тот же тип действия в этой реплике уже выполнен малой моделью
+      if (dup && Date.now() - dup.at < 30000) out = `Уже выполнено (повторно не запускаю): ${dup.r}. Ничего больше не делай, просто коротко подтверди пользователю.`;
       else if (f.name === 'run_task') out = await runTask(args);
       else if (FAST_TOOLS.includes(f.name)) {
         out = await runTool(user, f.name, args, {
@@ -165,7 +166,7 @@ export function voiceAgentSession(ws, user, params) {
       case 'AgentAudioDone': send({ t: 'state', state: 'listening' }); break;
       case 'ConversationText': {
         const text = clean(j.content); if (!text) break;
-        if (j.role === 'user') { send({ t: 'user', text }); saveMsg(conv.id, 'user', text); if (phoneModelEnabled()) pendingFast = fastTry(text).catch(() => null); }
+        if (j.role === 'user') { send({ t: 'user', text }); saveMsg(conv.id, 'user', text); done.clear(); pendingFast = null; if (phoneModelEnabled()) pendingFast = fastTry(text).catch(() => null); }   // новая реплика — новая «память» выполненного
         else { send({ t: 'agent', text }); saveMsg(conv.id, 'assistant', text); }
         break;
       }
