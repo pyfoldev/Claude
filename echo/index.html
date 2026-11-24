@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Эхо</title>
+<style>
+html,body{margin:0;height:100%;background:#05080c;color:#7fe;font:16px system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center}
+canvas{background:#000;border:1px solid #123;max-width:96vw;max-height:80vh}
+#hud{margin:8px;opacity:.85}
+button{background:#0a2a2a;color:#7fe;border:1px solid #3aa;padding:10px 16px;border-radius:6px;margin:2px}
+</style></head><body>
+<div id="hud"></div>
+<canvas id="c" width="630" height="630"></canvas>
+<div><button id="ping">Импульс (пробел)</button></div>
+<script>
+const N=21,S=30,cv=document.getElementById('c'),x=cv.getContext('2d'),hud=document.getElementById('hud');
+let grid,px,py,pings,level=1,waves,won,ac;
+function gen(){
+  const n=N+ (level-1>4?0:0);
+  grid=Array.from({length:N},()=>Array(N).fill(1));
+  const st=[[1,1]];grid[1][1]=0;
+  while(st.length){
+    const [cx,cy]=st[st.length-1];
+    const d=[[2,0],[-2,0],[0,2],[0,-2]].sort(()=>Math.random()-.5)
+      .filter(([a,b])=>cx+a>0&&cy+b>0&&cx+a<N-1&&cy+b<N-1&&grid[cy+b][cx+a]);
+    if(!d.length){st.pop();continue}
+    const [a,b]=d[0];grid[cy+b/2][cx+a/2]=0;grid[cy+b][cx+a]=0;st.push([cx+a,cy+b]);
+  }
+  px=1;py=1;pings=0;waves=[];won=false;
+}
+function sound(f,t=.15){
+  try{ac=ac||new AudioContext();const o=ac.createOscillator(),g=ac.createGain();
+  o.frequency.setValueAtTime(f,ac.currentTime);o.frequency.exponentialRampToValueAtTime(f/3,ac.currentTime+t);
+  g.gain.setValueAtTime(.15,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+t);
+  o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+t)}catch(e){}
+}
+function ping(){if(won)return;pings++;waves.push({r:0,t:performance.now()});sound(900,.4)}
+function move(dx,dy){
+  if(won)return;
+  if(!grid[py+dy][px+dx]){px+=dx;py+=dy;sound(120,.05)}
+  else sound(60,.08);
+  if(px==N-2&&py==N-2){won=true;sound(600,.6)}
+}
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k==' '){e.preventDefault();ping()}
+  else if(won&&k=='enter'){level++;gen()}
+  else if(['arrowup','w'].includes(k))move(0,-1);
+  else if(['arrowdown','s'].includes(k))move(0,1);
+  else if(['arrowleft','a'].includes(k))move(-1,0);
+  else if(['arrowright','d'].includes(k))move(1,0);
+});
+document.getElementById('ping').onclick=ping;
+function draw(now){
+  x.fillStyle='#000';x.fillRect(0,0,630,630);
+  const cx=px*S+S/2,cy=py*S+S/2;
+  waves=waves.filter(w=>(now-w.t)<2500);
+  for(const w of waves){
+    w.r=(now-w.t)*.25;
+    const fade=Math.max(0,1-(now-w.t)/2500);
+    for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+      const mx=i*S+S/2,my=j*S+S/2,d=Math.hypot(mx-cx,my-cy);
+      if(d<w.r&&d>w.r-110){
+        const a=fade*(1-(w.r-d)/110);
+        if(grid[j][i]){x.fillStyle=`rgba(80,255,230,${a})`;x.fillRect(i*S,j*S,S,S)}
+        else if(i==N-2&&j==N-2){x.fillStyle=`rgba(255,220,80,${a})`;x.fillRect(i*S+6,j*S+6,S-12,S-12)}
+      }
+    }
+    x.strokeStyle=`rgba(80,255,230,${fade*.4})`;x.beginPath();x.arc(cx,cy,w.r,0,7);x.stroke();
+  }
+  x.fillStyle='#fff';x.beginPath();x.arc(cx,cy,5,0,7);x.fill();
+  hud.textContent=won?`Выход найден! Импульсов: ${pings}. Enter — следующий уровень`:`Уровень ${level} · импульсов: ${pings} · стрелки/WASD — идти, пробел — импульс`;
+  requestAnimationFrame(draw);
+}
+gen();requestAnimationFrame(draw);
+</script></body></html>
