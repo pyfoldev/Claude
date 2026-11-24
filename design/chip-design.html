@@ -1,0 +1,277 @@
+<title>Chip</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@400;600;800&display=swap">
+<style>
+/* Layout: one calm column. Hero circle, 12-emotion grid of video circles, chat demo, approval note. */
+:root{
+  --bg:#F3F2FB; --surface:#FFFFFF; --ink:#2B2540; --muted:#6F6A8A; --line:#E2E0F0; --accent:#FF8FA3; --bubble:#E8E6F7;
+  --display:'Fredoka','Nunito',system-ui,sans-serif; --body:'Nunito',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17152A;--surface:#221F3A;--ink:#F1EFFF;--muted:#A9A4C7;--line:#34305A;--accent:#FF8FA3;--bubble:#2E2A52;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17152A;--surface:#221F3A;--ink:#F1EFFF;--muted:#A9A4C7;--line:#34305A;--accent:#FF8FA3;--bubble:#2E2A52;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5;
+  padding-block:24px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance}
+h2{font-size:1.6rem}
+p{margin:0}
+.muted{color:var(--muted)}
+.eyebrow{font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:800}
+
+.hero{display:flex;gap:40px;align-items:center;flex-wrap:wrap;justify-content:center}
+.hero-text{flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:14px}
+.hero h1{font-size:clamp(3rem,10vw,5rem);line-height:1}
+.hero .big{width:min(300px,100%);flex:0 0 auto}
+.traits{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.traits span{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.9rem;font-weight:600}
+
+/* video circle */
+.vc{position:relative;aspect-ratio:1;border-radius:50%;overflow:hidden;width:100%;box-shadow:0 6px 20px rgba(60,50,120,.18)}
+.vc>svg.scene{display:block;width:100%;height:100%}
+.vc .ring{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);pointer-events:none}
+.vc .ring circle{fill:none;stroke:rgba(255,255,255,.95);stroke-width:2.6;stroke-linecap:round;stroke-dasharray:295.3;stroke-dashoffset:295.3;animation:ring 4s linear infinite}
+.vc .time{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);background:rgba(30,25,60,.55);color:#fff;border-radius:999px;font-size:.7rem;font-weight:800;padding:1px 8px;letter-spacing:.04em}
+@keyframes ring{to{stroke-dashoffset:0}}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:24px 18px;margin-top:20px}
+.cell{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.cell .vc{max-width:170px}
+.cell b{font-family:var(--display);font-weight:500;font-size:1.05rem}
+.cell small{display:block;color:var(--muted);font-size:.82rem;line-height:1.3}
+
+/* chat */
+.chat{background:var(--surface);border:1px solid var(--line);border-radius:28px;padding:20px;max-width:440px;margin:20px auto 0;display:flex;flex-direction:column;gap:16px}
+.chat-head{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:1.1rem;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.chat-head .vc{width:36px;box-shadow:none}
+.chat-head small{display:block;font-family:var(--body);font-size:.75rem;color:var(--muted);line-height:1.1}
+.me{align-self:flex-end;max-width:80%;background:var(--accent);color:#3a1020;border-radius:20px 20px 6px 20px;padding:8px 14px;font-weight:600}
+.chip-reply{align-self:flex-start;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.chip-reply .vc{width:150px}
+.emo{background:var(--bubble);border-radius:20px 20px 20px 6px;padding:4px 12px;font-size:1.5rem;line-height:1.4}
+.tag{font-size:.75rem;color:var(--muted);padding-left:4px}
+
+.ask{background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:24px;display:flex;flex-direction:column;gap:10px}
+.ask ul{margin:0;padding-left:1.2em;color:var(--muted)}
+
+/* character animation */
+svg.scene *{transform-box:fill-box;transform-origin:center}
+.body{transform-origin:50% 90%}
+.a-bob .body{animation:bob 3.2s ease-in-out infinite}
+.a-jump .body{animation:jump 1.1s cubic-bezier(.3,.1,.3,1) infinite}
+.a-shake .body{animation:shake .22s linear infinite}
+.a-tremble .body{animation:tremble .12s linear infinite}
+.a-sway .body{animation:sway 2.6s ease-in-out infinite}
+.a-tilt .body{animation:tilt 3.4s ease-in-out infinite}
+.a-pop .body{animation:pop 1.1s ease-in-out infinite}
+.a-snore .body{animation:snore 3.6s ease-in-out infinite}
+.a-laugh .body{animation:laugh .45s ease-in-out infinite}
+.a-droop .body{animation:droop 3.4s ease-in-out infinite}
+.a-startle .body{animation:startle 2.4s ease-out infinite}
+.drift{animation:drift 9s ease-in-out infinite alternate}
+.drift2{animation:drift 12s ease-in-out -4s infinite alternate-reverse}
+.blink{animation:blink 3.8s infinite}
+.look{animation:look 5s ease-in-out infinite}
+.cheek{animation:cheek 2.4s ease-in-out infinite}
+.arm{animation:arm 2.2s ease-in-out infinite}
+.arm2{animation:arm 2.2s ease-in-out -1.1s infinite}
+.fl{animation:fl 2s ease-in-out infinite}
+.fl2{animation:fl 2.6s ease-in-out -1s infinite}
+.tw{animation:tw 1.4s ease-in-out infinite}
+.tw2{animation:tw 1.4s ease-in-out -.7s infinite}
+.drop{animation:drop 1.6s ease-in infinite}
+.drop2{animation:drop 1.6s ease-in -.8s infinite}
+.zz{animation:zz 3s ease-in-out infinite}
+.zz2{animation:zz 3s ease-in-out -1.5s infinite}
+.wave{transform-origin:50% 90%;animation:wave .6s ease-in-out infinite}
+.beat{animation:beat .9s ease-in-out infinite}
+.steam{animation:steam 1.6s ease-out infinite}
+.steam2{animation:steam 1.6s ease-out -.8s infinite}
+.bubble{animation:bubble 3.6s ease-in-out infinite}
+.eyepop{animation:eyepop 2.4s ease-out infinite}
+.jit{animation:jit .18s linear infinite}
+@keyframes bob{0%,100%{transform:translateY(0) scale(1,1) rotate(-1deg)}50%{transform:translateY(-7px) scale(1.025,.975) rotate(1deg)}}
+@keyframes jump{0%,100%{transform:translateY(0) scale(1.1,.88)}12%{transform:translateY(0) scale(1.1,.88)}40%{transform:translateY(-24px) scale(.93,1.1)}60%{transform:translateY(-24px) scale(.95,1.07)}85%{transform:translateY(0) scale(1.12,.86)}92%{transform:translateY(0) scale(.97,1.03)}}
+@keyframes shake{0%,100%{transform:translate(-2.5px,0) rotate(-1.5deg)}50%{transform:translate(2.5px,0) rotate(1.5deg)}}
+@keyframes tremble{0%,100%{transform:translate(-1.2px,.6px)}50%{transform:translate(1.2px,-.6px)}}
+@keyframes sway{0%,100%{transform:rotate(-4deg) translateY(0)}50%{transform:rotate(4deg) translateY(-4px)}}
+@keyframes tilt{0%,100%{transform:rotate(0)}30%,70%{transform:rotate(-8deg) translateX(-3px)}}
+@keyframes pop{0%,100%{transform:scale(1)}20%{transform:scale(1.1,1.12)}40%{transform:scale(.98)}55%{transform:scale(1.07,1.08)}75%{transform:scale(1)}}
+@keyframes snore{0%,100%{transform:scale(1,1) translateY(2px)}50%{transform:scale(1.05,1.06) translateY(-2px)}}
+@keyframes laugh{0%,100%{transform:translateY(0) rotate(-3deg) scale(1.03,.97)}50%{transform:translateY(-7px) rotate(3deg) scale(.98,1.03)}}
+@keyframes droop{0%,100%{transform:translateY(2px) scale(1.02,.96) rotate(-1.5deg)}50%{transform:translateY(7px) scale(1.04,.93) rotate(1.5deg)}}
+@keyframes startle{0%,100%{transform:scale(1)}6%{transform:translateY(-18px) scale(.9,1.14)}16%{transform:translateY(0) scale(1.1,.9)}26%{transform:scale(1)}}
+@keyframes drift{from{transform:translateX(-14px)}to{transform:translateX(14px)}}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}
+@keyframes look{0%,30%,100%{transform:translate(0,0)}40%,60%{transform:translate(6px,-3px)}70%,90%{transform:translate(-6px,1px)}}
+@keyframes cheek{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.18);opacity:1}}
+@keyframes arm{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg)}}
+@keyframes fl{0%,100%{transform:translateY(0);opacity:.95}50%{transform:translateY(-10px);opacity:1}}
+@keyframes tw{0%,100%{transform:scale(.4) rotate(0);opacity:.4}50%{transform:scale(1.15) rotate(30deg);opacity:1}}
+@keyframes drop{0%{transform:translateY(-6px);opacity:0}20%{opacity:1}100%{transform:translateY(36px);opacity:0}}
+@keyframes zz{0%{transform:translate(0,8px) scale(.7);opacity:0}30%{opacity:1}100%{transform:translate(12px,-22px) scale(1.1);opacity:0}}
+@keyframes wave{0%,100%{transform:rotate(-22deg)}50%{transform:rotate(26deg)}}
+@keyframes beat{0%,100%{transform:scale(1)}50%{transform:scale(1.2)}}
+@keyframes steam{0%{transform:translateY(8px) scale(.6);opacity:0}40%{opacity:.95}100%{transform:translateY(-18px) scale(1.2);opacity:0}}
+@keyframes bubble{0%,100%{transform:scale(.55)}50%{transform:scale(1.15)}}
+@keyframes eyepop{0%,100%{transform:scale(1)}6%{transform:scale(1.18)}20%{transform:scale(1)}}
+@keyframes jit{0%,100%{transform:translate(-1.5px,0)}50%{transform:translate(1.5px,1px)}}
+@media (prefers-reduced-motion:reduce){svg.scene *,.vc .ring circle{animation:none!important}.vc .ring circle{stroke-dashoffset:0}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="chipBody" gradientUnits="userSpaceOnUse" x1="0" y1="44" x2="0" y2="178">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".6" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E2ECFB"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <section class="hero">
+    <div class="big" id="hero-circle"></div>
+    <div class="hero-text">
+      <span class="eyebrow">Дизайн на согласование</span>
+      <h1>Chip</h1>
+      <p class="muted">Маленькое пушистое облачко, которое не пишет длинные ответы. Оно читает ваше сообщение, понимает настроение и отвечает эмодзи и видео-кружком с нужной эмоцией. Рта у него нет, всё видно по глазам, бровям и движениям.</p>
+      <div class="traits"><span>пушистое облачко</span><span>размытое голубое небо</span><span>большие блестящие глаза</span><span>без рта</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>12 эмоций-кружков</h2>
+    <p class="muted">Каждый кружок нарисован один раз и хранится в приложении как готовое видео. ИИ только выбирает, какой из них отправить. Здесь они зациклены, внизу бежит круговой таймер, как в мессенджерах.</p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section>
+    <h2>Как это выглядит в чате</h2>
+    <p class="muted">Вы пишете обычным текстом. Chip отвечает кружком и эмодзи.</p>
+    <div class="chat" id="chat">
+      <div class="chat-head"><div id="head-circle"></div><div>Chip<small>онлайн</small></div></div>
+    </div>
+  </section>
+
+  <section class="ask">
+    <h2>Что скажете?</h2>
+    <p>Посмотрите на форму, глаза и набор эмоций. Если что-то хочется поменять, напишите, например:</p>
+    <ul>
+      <li>другая форма облачка (больше пушистых бугорков, круглее, меньше)</li>
+      <li>глаза больше, меньше или другой формы</li>
+      <li>добавить или убрать эмоции из списка</li>
+      <li>другие цвета фонов у кружков</li>
+    </ul>
+    <p>Если всё нравится, следующим шагом соберу Android-приложение с чатом, ИИ и этими кружками.</p>
+  </section>
+</div>
+
+<script>
+const INK = '#2B2540', PINK = '#FF8FA3';
+const st = (w=5) => `fill="none" stroke="${INK}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+const heart = (x,y,s,c,cls='fl') => `<g transform="translate(${x} ${y}) scale(${s})"><path class="${cls}" d="M0 8 C-14 -2 -10 -14 0 -6 C10 -14 14 -2 0 8Z" fill="${c}"/></g>`;
+const spark = (x,y,s,cls='tw',c='#FFC93C') => `<g transform="translate(${x} ${y}) scale(${s})"><path class="${cls}" d="M0 -9 Q1 -1 9 0 Q1 1 0 9 Q-1 1 -9 0 Q-1 -1 0 -9Z" fill="${c}"/></g>`;
+const tear = (x,y,cls='drop',c='#7FB7FF') => `<g transform="translate(${x} ${y})"><path class="${cls}" d="M0 -7 Q6 2 0 6 Q-6 2 0 -7Z" fill="${c}"/></g>`;
+
+const eyeOpen = (dx=0,dy=0,look=false) => `<g transform="translate(${dx} ${dy})"><g class="${look?'look':''}"><g class="blink">
+  <ellipse cx="74" cy="112" rx="12" ry="15" fill="${INK}"/><ellipse cx="126" cy="112" rx="12" ry="15" fill="${INK}"/>
+  <circle cx="78" cy="106" r="5" fill="#fff"/><circle cx="130" cy="106" r="5" fill="#fff"/>
+  <circle cx="70" cy="118" r="2.4" fill="#fff"/><circle cx="122" cy="118" r="2.4" fill="#fff"/></g></g></g>`;
+const eyeWide = `<g class="eyepop">
+  <ellipse cx="74" cy="110" rx="15" ry="19" fill="${INK}"/><ellipse cx="126" cy="110" rx="15" ry="19" fill="${INK}"/>
+  <circle cx="79" cy="103" r="6.5" fill="#fff"/><circle cx="131" cy="103" r="6.5" fill="#fff"/>
+  <circle cx="69" cy="118" r="3" fill="#fff"/><circle cx="121" cy="118" r="3" fill="#fff"/></g>`;
+const eyeScared = `<g>
+  <ellipse cx="74" cy="110" rx="15" ry="19" fill="#fff" stroke="${INK}" stroke-width="3"/><ellipse cx="126" cy="110" rx="15" ry="19" fill="#fff" stroke="${INK}" stroke-width="3"/>
+  <circle class="jit" cx="74" cy="112" r="4.5" fill="${INK}"/><circle class="jit" cx="126" cy="112" r="4.5" fill="${INK}"/></g>`;
+const eyeHappy = `<path d="M62 118 Q74 98 86 118" ${st()}/><path d="M114 118 Q126 98 138 118" ${st()}/>`;
+const eyeClosed = `<path d="M62 110 Q74 122 86 110" ${st()}/><path d="M114 110 Q126 122 138 110" ${st()}/>`;
+const eyeSquint = `<path d="M62 100 L86 111 L62 122" ${st(5.5)}/><path d="M138 100 L114 111 L138 122" ${st(5.5)}/>`;
+const eyeHeart = `${heart(74,112,1.7,'#FF4F7B','beat')}${heart(126,112,1.7,'#FF4F7B','beat')}`;
+const eyeGlasses = `<g><rect x="54" y="98" width="40" height="28" rx="12" fill="#1d1830"/><rect x="106" y="98" width="40" height="28" rx="12" fill="#1d1830"/>
+  <path d="M94 108 H106" ${st(4)}/><path d="M60 104 L70 104" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".6"/><path d="M112 104 L122 104" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".6"/></g>`;
+const brows = (a) => a==='sad'
+  ? `<path d="M60 96 L86 86" ${st(4.5)}/><path d="M140 96 L114 86" ${st(4.5)}/>`
+  : a==='up'
+  ? `<path d="M60 84 Q74 74 88 84" ${st(4.5)}/><path d="M112 84 Q126 74 140 84" ${st(4.5)}/>`
+  : `<path d="M58 84 L88 97" ${st(5)}/><path d="M142 84 L112 97" ${st(5)}/>`;
+const puff = (x,y,r,cls) => `<g transform="translate(${x} ${y})"><circle class="${cls}" r="${r}" fill="#fff" opacity=".9"/></g>`;
+
+const EMO = [
+ {id:'joy', ru:'Радость', hint:'«Ура! У меня получилось!»', sky:['#58B6F8','#DDF2FF'], anim:'jump', eyes:eyeHappy, cheek:1.1,
+  extra:spark(36,56,1.4)+spark(168,48,1.1,'tw2')+spark(176,122,.8)+spark(26,126,.8,'tw2'), arms:'up'},
+ {id:'love', ru:'Любовь', hint:'«Ты лучший…»', sky:['#7CB8F5','#FFDDEB'], anim:'pop', eyes:eyeHeart, cheek:1.3, cheekC:'#FF8FB0',
+  extra:heart(32,58,1.4,'#FF6F95')+heart(168,44,1.1,'#FF8FB0','fl2')+heart(164,100,.8,'#FF6F95')},
+ {id:'laugh', ru:'Смех', hint:'«Ахаха, это смешно»', sky:['#5FB8F5','#FFF0C9'], anim:'laugh', eyes:eyeSquint, cheek:1.2,
+  extra:tear(46,108,'drop','#7FD0FF')+tear(154,108,'drop2','#7FD0FF')+spark(168,56,1,'tw')+spark(34,60,.9,'tw2'), arms:'up'},
+ {id:'sad', ru:'Грусть', hint:'«Мне сегодня плохо»', sky:['#7C97B8','#C4D2E2'], anim:'droop', eyes:eyeOpen()+brows('sad'), cheek:.4,
+  extra:tear(60,134)+tear(140,134,'drop2')+tear(60,134,'drop2','#9CC8FF')},
+ {id:'angry', ru:'Злость', hint:'«Меня всё бесит!»', sky:['#6E86B0','#F3B8A8'], anim:'shake', eyes:eyeOpen(0,2)+brows('angry'), cheek:1.5, cheekC:'#FF6B5A',
+  extra:`<g transform="translate(160 62)"><path class="beat" d="M-9 -3 Q-3 -3 -3 -9 M9 -3 Q3 -3 3 -9 M-9 3 Q-3 3 -3 9 M9 3 Q3 3 3 9" ${st(3.5).replace(INK,'#E8402A')}/></g>`+puff(46,70,6,'steam')+puff(36,84,4,'steam2')+puff(154,76,5,'steam2')},
+ {id:'surprised', ru:'Удивление', hint:'«Что?! Серьёзно?!»', sky:['#4FB0F7','#CFF1FF'], anim:'startle', eyes:eyeWide+brows('up'), cheek:.5,
+  extra:`<path d="M36 64 L52 72 M30 90 L48 92 M164 64 L148 72 M170 90 L152 92" ${st(3.5)}/>`+`<text x="100" y="38" text-anchor="middle" font-family="Fredoka,sans-serif" font-weight="600" font-size="30" fill="#E8402A" class="beat">!</text>`},
+ {id:'scared', ru:'Страх', hint:'«Ой, мне страшно…»', sky:['#6C7FB5','#B9C3E6'], anim:'tremble', eyes:eyeScared+brows('sad'), cheek:0,
+  extra:tear(160,74,'drop','#7FD0FF')+`<path d="M170 104 q6 6 0 12 M180 100 q8 10 0 20" ${st(3)}/>`},
+ {id:'sleepy', ru:'Сон', hint:'«Я так хочу спать…»', sky:['#4B6FB8','#BFC8F0'], anim:'snore', eyes:eyeClosed+`<g transform="translate(118 136)"><circle class="bubble" r="9" fill="#DDF0FF" stroke="#fff" stroke-width="2" opacity=".9"/></g>`, cheek:.6,
+  extra:`<text x="140" y="60" font-family="Fredoka,sans-serif" font-weight="600" font-size="26" fill="#fff" class="zz">Z</text><text x="156" y="42" font-family="Fredoka,sans-serif" font-weight="600" font-size="18" fill="#fff" class="zz2">z</text>`},
+ {id:'think', ru:'Размышление', hint:'«Хм, дай подумаю»', sky:['#69BDF2','#E4F4FF'], anim:'tilt', eyes:eyeOpen(0,-4,true)+`<path d="M62 92 L86 90" ${st(4.5)}/><path d="M114 86 Q126 80 138 88" ${st(4.5)}/>`, cheek:.5,
+  extra:`<g transform="translate(160 54)"><circle r="22" fill="#fff" opacity=".95"/><text y="9" text-anchor="middle" font-family="Fredoka,sans-serif" font-weight="600" font-size="28" fill="#5B8FD0" class="beat">?</text></g><circle cx="140" cy="84" r="4" fill="#fff" opacity=".95"/><circle cx="132" cy="94" r="2.5" fill="#fff" opacity=".95"/>`},
+ {id:'blush', ru:'Смущение', hint:'«Ой, ну перестань…»', sky:['#7DBBF3','#FFDCD8'], anim:'sway', eyes:eyeClosed, cheek:1.7, cheekC:'#FF8FA8',
+  extra:`<path class="steam" d="M40 70 q-6 -8 0 -16 q6 -8 0 -16" ${st(3).replace(INK,'#fff')}/><path class="steam2" d="M160 70 q6 -8 0 -16 q-6 -8 0 -16" ${st(3).replace(INK,'#fff')}/>`+heart(168,50,.8,'#FF8FB0','fl2')},
+ {id:'cool', ru:'Круто', hint:'«Да я как всегда»', sky:['#33A2F5','#BDE8FF'], anim:'bob', eyes:eyeGlasses, cheek:.5,
+  extra:spark(36,60,1.2)+spark(168,70,1,'tw2','#fff')+spark(164,150,.8,'tw','#fff')},
+ {id:'hello', ru:'Привет', hint:'«Привет! Как дела?»', sky:['#5DB9F6','#E3F4FF'], anim:'bob', eyes:eyeOpen(0,0,true), cheek:.9,
+  extra:spark(40,56,.9,'tw2','#fff'), arms:'wave'},
+];
+
+let SID = 0;
+function chip(e){
+  const CL=[[100,112,46],[62,122,34],[140,122,34],[78,86,32],[122,84,34],[100,70,28],[38,136,24],[164,136,24],[70,148,26],[130,148,26],[100,150,28]];
+  const n = ++SID, cc = e.cheekC || '#FFA6B8', ch = e.cheek;
+  const arm = (x,y,r,cls='arm',rot=0) => `<circle class="${cls}" cx="${x}" cy="${y}" r="${r}" fill="#fff" stroke="#C9DCF4" stroke-width="2"/>`;
+  const arms = e.arms==='wave'
+    ? arm(20,140,11)+`<g transform="translate(180 112)"><ellipse class="wave" cx="0" cy="-10" rx="11" ry="16" fill="#fff" stroke="#C9DCF4" stroke-width="2"/></g>`
+    : e.arms==='up'
+    ? `<g transform="translate(20 100)"><circle class="arm" r="11" fill="#fff" stroke="#C9DCF4" stroke-width="2"/></g><g transform="translate(180 100)"><circle class="arm2" r="11" fill="#fff" stroke="#C9DCF4" stroke-width="2"/></g>`
+    : arm(20,142,11)+arm(180,142,11,'arm2');
+  const cheekOp = Math.min(.9,.3+ch*.4), cr = 9+ch*3, cry = 6+ch*1.5;
+  return `<svg class="scene a-${e.anim}" viewBox="0 0 200 200" role="img" aria-label="Chip: ${e.ru}">
+    <defs>
+      <linearGradient id="sk${n}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${e.sky[0]}"/><stop offset="1" stop-color="${e.sky[1]}"/></linearGradient>
+      <filter id="bl${n}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter>
+      <filter id="fz${n}" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".07" numOctaves="2" seed="3" result="t"/><feDisplacementMap in="SourceGraphic" in2="t" scale="7"/></filter>
+      <filter id="bs${n}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter>
+    </defs>
+    <rect width="200" height="200" fill="url(#sk${n})"/>
+    <g filter="url(#bl${n})">
+      <g class="drift"><ellipse cx="38" cy="44" rx="42" ry="16" fill="#fff" opacity=".85"/><ellipse cx="172" cy="176" rx="46" ry="15" fill="#fff" opacity=".7"/></g>
+      <g class="drift2"><ellipse cx="164" cy="38" rx="30" ry="11" fill="#fff" opacity=".6"/><ellipse cx="30" cy="170" rx="34" ry="12" fill="#fff" opacity=".55"/></g>
+    </g>
+    <g class="body"><g transform="translate(10 8) scale(.9)">
+      <ellipse cx="100" cy="116" rx="88" ry="68" fill="#fff" opacity=".5" filter="url(#bs${n})"/>
+      ${arms}
+      <g filter="url(#fz${n})">
+        <g fill="#C9DCF4" transform="translate(0 5)">${CL.map(c=>`<circle cx="${c[0]}" cy="${c[1]}" r="${c[2]+1.5}"/>`).join('')}</g>
+        <g fill="url(#chipBody)">${CL.map(c=>`<circle cx="${c[0]}" cy="${c[1]}" r="${c[2]}"/>`).join('')}</g>
+      </g>
+      <ellipse cx="82" cy="66" rx="14" ry="6" fill="#fff" opacity=".95" transform="rotate(-25 82 66)"/>
+      <g transform="translate(0 4)">
+        ${e.eyes}
+      </g>
+    </g></g>
+    ${e.extra}
+  </svg>`;
+}
+function circle(e,time='0:03',ring=true){
+  return `<div class="vc">${chip(e)}${ring?`<svg class="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47"/></svg><span class="time">${time}</span>`:''}</div>`;
+}
+const byId = Object.fromEntries(EMO.map(e=>[e.id,e]));
+document.getElementById('hero-circle').innerHTML = circle(byId.hello,'0:03');
+document.getElementById('head-circle').innerHTML = circle({...byId.hello,extra:'',arms:''},'',false);
+document.getElementById('grid').innerHTML = EMO.map(e=>`<div class="cell">${circle(e)}<div><b>${e.ru}</b><small>${e.hint}</small></div></div>`).join('');
+const demo = [
+  ['Сегодня сдал экзамен на пятёрку!!!','joy','🎉✨🥳'],
+  ['Меня сегодня всё бесит…','angry','😤💢'],
+  ['Мне кажется, я влюбился','love','😍💕'],
+];
+document.getElementById('chat').insertAdjacentHTML('beforeend', demo.map(([t,id,em])=>
+  `<div class="me">${t}</div><div class="chip-reply">${circle(byId[id],'0:03')}<div class="emo">${em}</div><div class="tag">Chip выбрал: ${byId[id].ru.toLowerCase()}</div></div>`).join(''));
+</script>
