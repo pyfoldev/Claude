@@ -514,6 +514,45 @@ class AppVM(app: Application) : AndroidViewModel(app) {
     fun updChatModel(v: String) { Offline.unload(Offline.chatSpec()); chatModel = v; store.chatModel = v; Offline.chatId = v }
     fun updOffline(v: Boolean) { offlineMode = v; store.offlineMode = v; if (v) { toast = if (Offline.ready(getApplication(), Offline.chatSpec())) "Оффлайн-режим: отвечаю на телефоне" else "Загрузите модели: Настройки → Оффлайн-режим"; if (voiceJob?.isActive == true) stopVoice() } else { Offline.unload(Offline.chatSpec()) } }
     private var offlineJob: Job? = null
+    private val sysTts by lazy { SysTts(getApplication()) }
+    /** Голосовой режим без интернета: распознавание и синтез — системные, команды телефону — наша модель, разговор — Vikhr-Qwen 1.5B. */
+    private suspend fun offlineVoiceLoop() {
+        val app = getApplication<Application>()
+        try {
+            while (currentCoroutineContext().isActive) {
+                voiceState = VoiceState.Listening; voiceCaption = ""
+                val typed = typedVoiceText; typedVoiceText = null
+                if (typed == null && voiceMuted) { voiceLevel = 0f; delay(200); continue }
+                var text = typed.orEmpty()
+                if (typed == null) {
+                    val r = tryC { withContext(Dispatchers.Main) { fastStt.listen(sttLang.let { if (it == "auto") "ru" else it }, { voiceLevel = it }, { voiceCaption = it }, offline = true) } }
+                    voiceLevel = 0f
+                    if (r.isFailure) { toast = "Системное распознавание речи недоступно: ${r.exceptionOrNull()?.message?.take(80)}"; delay(2000); continue }
+                    text = r.getOrNull().orEmpty().trim()
+                }
+                if (text.isBlank()) continue
+                voiceState = VoiceState.Thinking; voiceCaption = text; voiceReply = ""
+                val hist = messages.filter { it.content.isNotBlank() && (it.role == "user" || it.role == "assistant") && it.toolCalls == null }.takeLast(12).map { it.role to it.content }
+                messages.add(Msg(id = -System.nanoTime().coerceAtLeast(1), role = "user", content = text, createdAt = System.currentTimeMillis()))
+                val buf = StringBuilder()
+                fun flush(force: Boolean) {
+                    while (true) {
+                        val m = Regex("^(.+?[.!?…]+)(\\s|$)", RegexOption.DOT_MATCHES_ALL).find(buf)
+                        val cut = when { m != null && (force || m.range.last < buf.length - 1) -> m.groupValues[1].length; force && buf.isNotBlank() -> buf.length; else -> 0 }
+                        if (cut == 0) return
+                        val sent = buf.substring(0, cut).trim(); buf.delete(0, cut)
+                        if (sent.isNotEmpty()) { voiceState = VoiceState.Speaking; sysTts.enqueue(sent.replace(Regex("[*_#`>]"), "")) }
+                    }
+                }
+                val ans = try { Offline.reply(app, text, hist, { statusText = it }, voice = true) { d -> voiceReply += d; buf.append(d); flush(false) } } catch (e: CancellationException) { throw e } catch (e: Throwable) { "Ошибка: ${e.message}" }
+                if (voiceReply.isBlank()) { voiceReply = ans; buf.append(ans) }
+                flush(true)
+                messages.add(Msg(id = -System.nanoTime().coerceAtLeast(1), role = "assistant", content = ans, createdAt = System.currentTimeMillis()))
+                statusText = ""
+                sysTts.awaitDone()
+            }
+        } finally { sysTts.stop(); voiceState = VoiceState.Idle }
+    }
     private fun sendOffline(t: String) {
         val app = getApplication<Application>()
         val hist = messages.filter { it.content.isNotBlank() && (it.role == "user" || it.role == "assistant") && it.toolCalls == null }.takeLast(16).map { it.role to it.content }
@@ -904,7 +943,6 @@ class AppVM(app: Application) : AndroidViewModel(app) {
     private var voiceJob: Job? = null
 
     fun startVoice() {
-        if (offlineMode) { toast = "Голосовой звонок работает только с интернетом — в оффлайн-режиме пишите текстом"; return }
         if (voiceJob?.isActive != true && needGate()) { if (!gateOpen) requireGate { startVoice() }; return }
         if (serverOld && !oldWarned) { oldWarned = true; toast = "Сервер не обновлён: звонок и распознавание будут медленнее. Запустите ./deploy/deploy.sh" }
         screen = Screen.Voice
@@ -913,7 +951,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         ClapState.paused = true
         stopSpeaking()
         voiceJob = viewModelScope.launch {
-            try { if (agentVoiceOk) agentVoiceLoop() else voiceLoop() } catch (e: CancellationException) { throw e } catch (e: Throwable) { err(e) }
+            try { if (offlineMode) offlineVoiceLoop() else if (agentVoiceOk) agentVoiceLoop() else voiceLoop() } catch (e: CancellationException) { throw e } catch (e: Throwable) { err(e) }
             finally { recorder.cancel(); player.stop(); voiceState = VoiceState.Idle; voiceLevel = 0f }
         }
     }
@@ -1001,7 +1039,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         voiceJob?.cancel(); voiceJob = null
         VoiceService.stop(getApplication())
         ClapState.paused = false
-        runCatching { recorder.cancel() }; runCatching { player.stop() }
+        runCatching { recorder.cancel() }; runCatching { player.stop() }; runCatching { sysTts.stop() }
         runCatching { agentSession?.cancel() }; agentSession = null
         if (wasActive && running) stopRun()
         onTurnText = null; onTurnDone = null; typedVoiceText = null

@@ -15,11 +15,14 @@ object Offline {
     class Spec(val id: String, val title: String, val file: String, val size: Long, val url: (Store) -> String)
 
     val LFM = Spec("lfm", "Чат — LFM2.5 1.2B Saiga (быстрый)", "lfm25-saiga-q4.gguf", 730_897_856L) { "https://huggingface.co/mradermacher/LFM2.5-1.2B-Saiga-It-v3-i1-GGUF/resolve/main/LFM2.5-1.2B-Saiga-It-v3.i1-Q4_K_M.gguf" }
+    val VIKHR = Spec("vikhr", "Чат — Vikhr-Qwen 1.5B (русский, быстрый)", "vikhr-qwen-1.5b-q4.gguf", 985_700_992L) { "https://huggingface.co/Vikhrmodels/Vikhr-Qwen-2.5-1.5B-Instruct-GGUF/resolve/main/Vikhr-Qwen-2.5-1.5b-Instruct-Q4_K_M.gguf" }
     val CHAT = Spec("chat", "Чат — Ministral 3 3B Instruct (умнее, тяжелее)", "ministral-3-3b-q4.gguf", 2_147_023_008L) { "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf" }
     val PHONE = Spec("phone", "Управление телефоном — OpenAgent Phone 0.6B", "phone.gguf", 444_000_000L) { it.phoneModelUrl.ifBlank { it.server.trimEnd('/') + "/models/phone.gguf" } }
-    val ALL = listOf(LFM, CHAT, PHONE)
-    @Volatile var chatId = "lfm"                       // какая модель отвечает в чате: lfm | chat (Ministral)
-    fun chatSpec() = if (chatId == "chat") CHAT else LFM
+    val ALL = listOf(VIKHR, LFM, CHAT, PHONE)
+    @Volatile var chatId = "vikhr"                       // какая модель отвечает в чате: lfm | chat (Ministral)
+    fun chatSpec() = when (chatId) { "chat" -> CHAT; "lfm" -> LFM; else -> VIKHR }
+    /** В голосовом режиме отвечает Vikhr (если скачан), иначе выбранная модель чата. */
+    private fun voiceSpec(ctx: Context) = if (ready(ctx, VIKHR)) VIKHR else chatSpec()
 
     val progress = mutableStateMapOf<String, Float>()      // 0..1 — идёт загрузка
     val error = mutableStateOf("")
@@ -141,10 +144,10 @@ object Offline {
     private suspend fun execute(ctx: Context, acts: List<JsonObject>): String { val out = ArrayList<String>(); for (a in acts) out.add(PhoneControl.run(ctx, a)); return out.joinToString("\n") }
 
     // ---- чат ----
-    private fun chatPrompt(history: List<Pair<String, String>>): String {
+    private fun chatPrompt(spec: Spec, history: List<Pair<String, String>>, voice: Boolean): String {
         val date = java.text.SimpleDateFormat("d MMMM yyyy, EEEE", java.util.Locale("ru")).format(java.util.Date())
-        val sys = "Ты — OpenAgent, ассистент на телефоне владельца. Сейчас работаешь без интернета, прямо на устройстве. Отвечай по-человечески, кратко и по делу, на языке собеседника. Сегодня $date. Ты не можешь искать в сети и не знаешь новостей; если для ответа нужен интернет или свежие данные — так и скажи. Команды вроде «открой приложение», «поставь будильник», «включи фонарик» обрабатываются отдельно; если просят что-то с телефоном, чего не получилось сделать, предложи сформулировать проще."
-        val lfm = chatSpec() === LFM
+        val sys = "Ты — OpenAgent, ассистент на телефоне владельца. Сейчас работаешь без интернета, прямо на устройстве. Отвечай по-человечески, кратко и по делу, на языке собеседника. Сегодня $date.${if (voice) " Это голосовой разговор: отвечай 1–3 короткими предложениями простой речью, без списков, markdown и эмодзи." else ""} Ты не можешь искать в сети и не знаешь новостей; если для ответа нужен интернет или свежие данные — так и скажи. Команды вроде «открой приложение», «поставь будильник», «включи фонарик» обрабатываются отдельно; если просят что-то с телефоном, чего не получилось сделать, предложи сформулировать проще."
+        val lfm = spec !== CHAT
         val sb = StringBuilder(if (lfm) "<|im_start|>system\n$sys<|im_end|>\n" else "[SYSTEM_PROMPT]$sys[/SYSTEM_PROMPT]")
         // окно контекста небольшое — берём хвост диалога по размеру
         var budget = 7000; val keep = ArrayList<Pair<String, String>>()
@@ -158,7 +161,8 @@ object Offline {
     }
 
     /** Ответ на сообщение полностью на телефоне. history — прошлые реплики без текущей. onDelta получает кусочки ответа чата. */
-    suspend fun reply(ctx: Context, text: String, history: List<Pair<String, String>>, onStatus: (String) -> Unit, onDelta: (String) -> Unit): String {
+    suspend fun reply(ctx: Context, text: String, history: List<Pair<String, String>>, onStatus: (String) -> Unit, voice: Boolean = false, onDelta: (String) -> Unit): String {
+        val spec = if (voice) voiceSpec(ctx) else chatSpec()
         stopRequested = false
         pending?.let { p -> pending = null; if (isYes(text)) { onStatus("Выполняю…"); return execute(ctx, p) } }
         if (ready(ctx, PHONE)) {
@@ -171,12 +175,12 @@ object Offline {
                 return execute(ctx, r.actions)
             }
         }
-        if (!ready(ctx, chatSpec())) return "Оффлайн-модель чата ещё не загружена: Настройки → Оффлайн-режим."
+        if (!ready(ctx, spec)) return "Оффлайн-модель чата ещё не загружена: Настройки → Оффлайн-режим."
         onStatus("Думаю…")
         return withContext(Dispatchers.Default) {
-            val m = engine(ctx, chatSpec(), 4096) ?: return@withContext "Не удалось загрузить модель — возможно, не хватает памяти телефона."
+            val m = engine(ctx, spec, 4096) ?: return@withContext "Не удалось загрузить модель — возможно, не хватает памяти телефона."
             val sb = StringBuilder()
-            try { m.generate(chatPrompt(history + ("user" to text)), 700, 0.5f, 0.9f, 1.05f) { piece -> sb.append(piece); onDelta(piece); !stopRequested } }
+            try { m.generate(chatPrompt(spec, history + ("user" to text), voice), if (voice) 220 else 700, 0.5f, 0.9f, 1.05f) { piece -> sb.append(piece); onDelta(piece); !stopRequested } }
             catch (e: Throwable) { return@withContext "Ошибка модели: ${e.message}" }
             sb.toString().trim().ifBlank { "…" }
         }

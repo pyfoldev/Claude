@@ -32,7 +32,7 @@ class FastStt(private val ctx: Context) {
     private fun tag(lang: String) = when (lang) { "ru" -> "ru-RU"; "en" -> "en-US"; "uk" -> "uk-UA"; "de" -> "de-DE"; else -> "ru-RU" }
 
     /** Возвращает текст, "" если речи не было, бросает Unavailable при сбое службы (тогда нужен запасной путь). */
-    suspend fun listen(lang: String, onLevel: (Float) -> Unit, onPartial: (String) -> Unit): String = suspendCancellableCoroutine { c ->
+    suspend fun listen(lang: String, onLevel: (Float) -> Unit, onPartial: (String) -> Unit, offline: Boolean = false): String = suspendCancellableCoroutine { c ->
         val comp = RecognizerPicker.pick(ctx)
         if (comp == null) { c.resumeWithException(Unavailable("Нет службы распознавания речи")); return@suspendCancellableCoroutine }
         val sr = runCatching { SpeechRecognizer.createSpeechRecognizer(ctx, comp) }.getOrNull()
@@ -61,6 +61,7 @@ class FastStt(private val ctx: Context) {
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag(lang))
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, offline)
             .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName)
             .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 650L)
             .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 450L)

@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 fun OfflineSettings(vm: AppVM) {
     val ctx = LocalContext.current
     SwitchRow(Icons.Outlined.CloudOff, "Работать без интернета", "Чат и команды телефону считаются на устройстве", vm.offlineMode, vm::updOffline)
-    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { Segmented(listOf("lfm" to "LFM (быстро)", "chat" to "Ministral (умнее)"), vm.chatModel, vm::updChatModel) }
+    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { Segmented(listOf("vikhr" to "Vikhr", "lfm" to "LFM", "chat" to "Ministral"), vm.chatModel, vm::updChatModel) }
     for (s in Offline.ALL) {
         val ready = Offline.ready(ctx, s); val pr = Offline.progress[s.id]
         val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) Offline.importFile(ctx, s, uri) }
