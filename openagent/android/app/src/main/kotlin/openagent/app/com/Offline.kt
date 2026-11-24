@@ -77,7 +77,7 @@ object Offline {
                 }
                 if (part.exists()) { file(ctx, s).delete(); part.renameTo(file(ctx, s)) }
                 withContext(Dispatchers.Main) { tick.value++ }
-            } catch (e: CancellationException) { throw e } catch (e: Throwable) { error.value = e.message ?: "Ошибка загрузки" }
+            } catch (e: CancellationException) { throw e } catch (e: Throwable) { error.value = if (s.id == "phone" && (e.message ?: "").contains("404")) "Модель не найдена: сервер её не раздаёт, а репозиторий закрытый. Обновите сервер и положите на него dist/phone-gguf (git pull), либо выберите phone.gguf кнопкой «Файл…»" else e.message ?: "Ошибка загрузки" }
             finally { progress.remove(s.id) }
         }
     }

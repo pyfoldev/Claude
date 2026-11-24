@@ -26,8 +26,19 @@ app.get('/captcha', (_req, res) => {
 // Офлайн-модель управления телефоном: приложение скачивает её отсюда (положите phone.gguf в DATA_DIR/models/). Поддерживает докачку (Range).
 app.get('/models/phone.gguf', (req, res) => {
   const f = path.resolve(config.dataDir, 'models', 'phone.gguf');
-  if (!fs.existsSync(f)) return res.status(404).json({ error: 'phone.gguf не найден в DATA_DIR/models' });
-  res.sendFile(f);
+  if (fs.existsSync(f)) return res.sendFile(f);
+  // нет цельного файла — склеиваем «на лету» из частей phone.gguf.partNN (папка dist/phone-gguf репозитория или DATA_DIR/models/phone-gguf)
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const dirs = [path.resolve(config.dataDir, 'models', 'phone-gguf'), path.resolve(here, '..', '..', '..', 'dist', 'phone-gguf'), path.resolve(here, '..', '..', 'dist', 'phone-gguf'), path.resolve(config.dataDir, 'models')];
+  for (const d of dirs) {
+    let parts; try { parts = fs.readdirSync(d).filter((n) => /^phone\.gguf\.part\d+$/.test(n)).sort(); } catch { continue; }
+    if (!parts.length) continue;
+    const files = parts.map((n) => path.join(d, n));
+    res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Content-Length', files.reduce((a, x) => a + fs.statSync(x).size, 0));
+    let i = 0; const next = () => { if (i >= files.length) return res.end(); const st = fs.createReadStream(files[i++]); st.on('error', () => res.destroy()); st.on('end', next); st.pipe(res, { end: false }); };
+    res.on('close', () => {}); return next();
+  }
+  res.status(404).json({ error: 'phone.gguf не найден: положите файл в DATA_DIR/models/ или папку dist/phone-gguf с частями' });
 });
 app.get('/health', (_req, res) => res.json({ ok: true, v: SERVER_V, features: [...(gigaamUp() ? ['stt-gigaam'] : []), 'stt-stream', 'tts-stream', 'phone', 'docs', 'diag', 'bridge', 'pplx', 'tts-pcm', 'mcp', 'notes', 'todos', 'secrets', 'share', 'compare', 'export', 'watch', 'lookup', 'voice-agent'] }));
 mountSites(app);
