@@ -23,9 +23,9 @@ class SettingsStore(context: Context) {
         .putString("baseUrl", s.baseUrl.trim()).putString("apiKey", s.apiKey.trim()).putString("model", s.model.trim()).apply()
 
     companion object {
-        // Placeholder values: confirm the real river.ai endpoint and model in Settings.
+        // From docs.river.ai/guides/inference: OpenAI-compatible API, keys look like rv_...
         const val DEFAULT_URL = "https://api.river.ai/v1"
-        const val DEFAULT_MODEL = "river"
+        const val DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash"
     }
 }
 
@@ -53,7 +53,7 @@ class RiverClient {
             history.takeLast(8).forEach { (fromUser, text) ->
                 msgs.put(JSONObject().put("role", if (fromUser) "user" else "assistant").put("content", text))
             }
-            val body = JSONObject().put("model", settings.model).put("messages", msgs).put("temperature", 0.3).put("max_tokens", 60)
+            val body = JSONObject().put("model", settings.model).put("messages", msgs).put("temperature", 0.3).put("max_tokens", 512)
             val url = URL(settings.baseUrl.trimEnd('/') + "/chat/completions")
             val c = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"; connectTimeout = 15000; readTimeout = 25000; doOutput = true

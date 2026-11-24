@@ -3,10 +3,9 @@ package ai.chip.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -15,7 +14,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             ChipTheme {
                 val vm: ChatViewModel = viewModel()
@@ -26,21 +28,21 @@ class MainActivity : ComponentActivity() {
 }
 
 object ChipColors {
-    val Sky = Color(0xFF5DB9F6)
-    val SkyDark = Color(0xFF2E8FD6)
+    val Ink = Color(0xFF0D0D0D)
+    val Gray = Color(0xFFF4F4F4)
+    val Line = Color(0xFFE5E5E5)
+    val Muted = Color(0xFF6E6E80)
 }
 
+/** Light only: white background like ChatGPT / Claude. */
 @Composable
 fun ChipTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val scheme = if (dark) darkColorScheme(
-        primary = ChipColors.Sky, onPrimary = Color(0xFF06223A),
-        background = Color(0xFF0F1A2B), surface = Color(0xFF182638), onSurface = Color(0xFFE8F2FF),
-        surfaceVariant = Color(0xFF22344B), onSurfaceVariant = Color(0xFFA9C0DA),
-    ) else lightColorScheme(
-        primary = ChipColors.SkyDark, onPrimary = Color.White,
-        background = Color(0xFFEFF7FF), surface = Color.White, onSurface = Color(0xFF1B2540),
-        surfaceVariant = Color(0xFFDDEBFA), onSurfaceVariant = Color(0xFF5B6B85),
+    val scheme = lightColorScheme(
+        primary = ChipColors.Ink, onPrimary = Color.White,
+        background = Color.White, onBackground = ChipColors.Ink,
+        surface = Color.White, onSurface = ChipColors.Ink,
+        surfaceVariant = ChipColors.Gray, onSurfaceVariant = ChipColors.Muted,
+        outline = ChipColors.Line,
     )
     MaterialTheme(colorScheme = scheme, content = content)
 }
