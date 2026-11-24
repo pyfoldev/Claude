@@ -33,4 +33,4 @@ python serve_ct2.py ct2-int8 merged 8791        # затем в .env серве�
 Результаты на 139 ручных фразах: верно 101 из 114 команд, неверно выполнено 0, 13 ушли большой модели, 25 из 25 «не команд» переданы правильно.
 
 ## Оффлайн-режим в приложении (v11)
-`make-phone-gguf.sh` собирает `phone.gguf` (Qwen3-0.6B + LoRA, Q8_0). Файл кладётся на сервер в `DATA_DIR/models/phone.gguf` (раздаётся по `/models/phone.gguf`, с докачкой) либо выбирается вручную в приложении. Чат оффлайн — Ministral 3 3B Instruct (Q4_K_M) с Hugging Face.
+`make-phone-gguf.sh` собирает `phone.gguf` (Qwen3-0.6B + LoRA, Q5_K_M). Файл кладётся на сервер в `DATA_DIR/models/phone.gguf` (раздаётся по `/models/phone.gguf`, с докачкой) либо выбирается вручную в приложении. Чат оффлайн — Ministral 3 3B Instruct (Q4_K_M) с Hugging Face.

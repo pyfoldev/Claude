@@ -15,7 +15,7 @@ object Offline {
     class Spec(val id: String, val title: String, val file: String, val size: Long, val url: (Store) -> String)
 
     val CHAT = Spec("chat", "Чат — Ministral 3 3B Instruct", "ministral-3-3b-q4.gguf", 2_147_023_008L) { "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf" }
-    val PHONE = Spec("phone", "Управление телефоном — OpenAgent Phone 0.6B", "phone.gguf", 650_000_000L) { it.phoneModelUrl.ifBlank { it.server.trimEnd('/') + "/models/phone.gguf" } }
+    val PHONE = Spec("phone", "Управление телефоном — OpenAgent Phone 0.6B", "phone.gguf", 444_000_000L) { it.phoneModelUrl.ifBlank { it.server.trimEnd('/') + "/models/phone.gguf" } }
     val ALL = listOf(CHAT, PHONE)
 
     val progress = mutableStateMapOf<String, Float>()      // 0..1 — идёт загрузка
@@ -28,6 +28,34 @@ object Offline {
     fun ready(ctx: Context, s: Spec): Boolean { tick.value; return file(ctx, s).let { it.exists() && it.length() > 1_000_000 } }
     fun sizeMb(ctx: Context, s: Spec) = file(ctx, s).length() / 1_000_000
 
+    /** Запасной источник phone.gguf: части по 50 МБ в репозитории проекта (если сервер файл не раздаёт). */
+    private const val PARTS = 9
+    private fun partUrl(i: Int) = "https://raw.githubusercontent.com/pyfoldev/Claude/ccr-a3a4ce88-j9zjtg/dist/phone-gguf/phone.gguf.part%02d".format(i)
+
+    /** Скачивает один файл в dest с докачкой; onBytes(скачано всего по файлу, размер). */
+    private fun fetch(url: String, dest: File, expect: Long, alive: () -> Boolean, onBytes: (Long, Long) -> Unit) {
+        val have = if (dest.exists()) dest.length() else 0L
+        val rq = Request.Builder().url(url).apply { if (have > 0) header("Range", "bytes=$have-") }.build()
+        SharedHttp.stream.newCall(rq).execute().use { r ->
+            if (r.code == 416) return
+            if (!r.isSuccessful) throw IllegalStateException("HTTP ${r.code}")
+            val resumed = r.code == 206
+            val total = (r.body?.contentLength() ?: -1L).let { if (it > 0) it + (if (resumed) have else 0) else expect }
+            RandomAccessFile(dest, "rw").use { raf ->
+                if (resumed) raf.seek(have) else raf.setLength(0)
+                var done = if (resumed) have else 0L; val buf = ByteArray(256 * 1024); var lastUi = 0L
+                val src = r.body!!.byteStream()
+                while (true) {
+                    val n = src.read(buf); if (n < 0) break
+                    raf.write(buf, 0, n); done += n
+                    val now = System.currentTimeMillis(); if (now - lastUi > 400) { lastUi = now; onBytes(done, total) }
+                    if (!alive()) return
+                }
+                if (total > 0 && done < total) throw IllegalStateException("Загрузка оборвалась на ${done * 100 / total}% — нажмите ещё раз, продолжу с этого места")
+            }
+        }
+    }
+
     /** Загрузка с докачкой: прерванная (сеть, выгрузка из памяти) продолжается с того же места. */
     fun download(ctx: Context, store: Store, s: Spec) {
         if (jobs[s.id]?.isActive == true) return
@@ -35,25 +63,17 @@ object Offline {
         jobs[s.id] = scope.launch {
             val part = File(dir(ctx), s.file + ".part")
             try {
-                val have = if (part.exists()) part.length() else 0L
-                val rq = Request.Builder().url(s.url(store)).apply { if (have > 0) header("Range", "bytes=$have-") }.build()
-                SharedHttp.stream.newCall(rq).execute().use { r ->
-                    if (r.code == 416) { part.renameTo(file(ctx, s)); return@use }
-                    if (!r.isSuccessful) throw IllegalStateException(if (r.code == 404 && s.id == "phone") "Файл модели не найден на сервере (${s.url(store)}). Загрузите phone.gguf на сервер или выберите файл вручную" else "HTTP ${r.code}")
-                    val resumed = r.code == 206
-                    val total = (r.body?.contentLength() ?: -1L).let { if (it > 0) it + (if (resumed) have else 0) else s.size }
-                    RandomAccessFile(part, "rw").use { raf ->
-                        if (resumed) raf.seek(have) else raf.setLength(0)
-                        var done = if (resumed) have else 0L; val buf = ByteArray(256 * 1024); var lastUi = 0L
-                        val src = r.body!!.byteStream()
-                        while (true) {
-                            val n = src.read(buf); if (n < 0) break
-                            raf.write(buf, 0, n); done += n
-                            val now = System.currentTimeMillis(); if (now - lastUi > 400) { lastUi = now; progress[s.id] = (done.toFloat() / total).coerceIn(0f, 1f) }
-                            if (!isActive) return@use
-                        }
-                        if (total > 0 && done < total * 0.98) throw IllegalStateException("Загрузка оборвалась на ${done * 100 / total}% — нажмите ещё раз, продолжу с этого места")
+                var viaParts = false
+                try { fetch(s.url(store), part, s.size, { isActive }) { d, t -> progress[s.id] = (d.toFloat() / t).coerceIn(0f, 1f) } }
+                catch (e: CancellationException) { throw e }
+                catch (e: Throwable) { if (s.id != "phone") throw e; viaParts = true }
+                if (viaParts) {          // сервер файл не отдал — берём части из репозитория и склеиваем
+                    part.delete()
+                    for (i in 0 until PARTS) {
+                        val pf = File(dir(ctx), s.file + ".p%02d".format(i))
+                        if (!pf.exists() || pf.length() < 50_000_000L && i < PARTS - 1) fetch(partUrl(i), pf, 50_000_000L, { isActive }) { d, t -> progress[s.id] = ((i + d.toFloat() / t) / PARTS).coerceIn(0f, 1f) }
                     }
+                    part.outputStream().use { o -> for (i in 0 until PARTS) { val pf = File(dir(ctx), s.file + ".p%02d".format(i)); pf.inputStream().use { it.copyTo(o) }; pf.delete() } }
                 }
                 if (part.exists()) { file(ctx, s).delete(); part.renameTo(file(ctx, s)) }
                 withContext(Dispatchers.Main) { tick.value++ }
