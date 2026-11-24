@@ -26,6 +26,15 @@ systemctl restart openagent
 Скрипт ставит Node 22, Caddy (HTTPS для `openagents.duckdns.org`), JDK 17 + Android SDK, `gh`, systemd-сервис.
 Домен должен указывать на IP сервера, порты 80/443 открыты.
 
+## Оффлайн-режим: модель управления телефоном
+Приложение (Настройки → Оффлайн-режим) скачивает модель команд телефону с вашего сервера по `/models/phone.gguf`. Чат (Ministral 3 3B) оно качает само с Hugging Face.
+1. Скачайте из репозитория папку `dist/phone-gguf/` (9 файлов `phone.gguf.part00` … `part08`, всего 424 МБ) — репозиторий закрытый, поэтому с телефона они недоступны.
+2. Положите их на сервер в `DATA_DIR/models/phone-gguf/` (по умолчанию `server/data/models/phone-gguf/`):
+   `scp dist/phone-gguf/* user@сервер:/путь/к/data/models/phone-gguf/`
+   Если сервер развёрнут из git-клона — достаточно `git pull`, сервер сам найдёт `dist/phone-gguf/`.
+3. Перезапускать сервер не нужно. Проверка: `curl -sI https://ваш-сервер/models/phone.gguf` — должен быть `200` и `Content-Length: 444414816`.
+Вместо частей можно положить один файл: `cat phone.gguf.part* > DATA_DIR/models/phone.gguf`. Либо в приложении кнопка «Файл…» — выбрать готовый `phone.gguf`.
+
 ## Что нужно заполнить в `.env`
 - `OWNER_EMAILS` — ваш e-mail (только владелец получает shell на сервере).
 - `RIVER_API_KEY`, `RIVER_BASE_URL`, `RIVER_MODEL`.
