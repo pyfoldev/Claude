@@ -510,7 +510,9 @@ class AppVM(app: Application) : AndroidViewModel(app) {
 
     // ---------- оффлайн-режим: всё на телефоне ----------
     var offlineMode by mutableStateOf(store.offlineMode)
-    fun updOffline(v: Boolean) { offlineMode = v; store.offlineMode = v; if (v) { toast = if (Offline.ready(getApplication(), Offline.CHAT)) "Оффлайн-режим: отвечаю на телефоне" else "Загрузите модели: Настройки → Оффлайн-режим"; if (voiceJob?.isActive == true) stopVoice() } else { Offline.unload(Offline.CHAT) } }
+    var chatModel by mutableStateOf(store.chatModel.also { Offline.chatId = it })
+    fun updChatModel(v: String) { Offline.unload(Offline.chatSpec()); chatModel = v; store.chatModel = v; Offline.chatId = v }
+    fun updOffline(v: Boolean) { offlineMode = v; store.offlineMode = v; if (v) { toast = if (Offline.ready(getApplication(), Offline.chatSpec())) "Оффлайн-режим: отвечаю на телефоне" else "Загрузите модели: Настройки → Оффлайн-режим"; if (voiceJob?.isActive == true) stopVoice() } else { Offline.unload(Offline.chatSpec()) } }
     private var offlineJob: Job? = null
     private fun sendOffline(t: String) {
         val app = getApplication<Application>()

@@ -15,8 +15,8 @@ android {
         applicationId = "openagent.app.com"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "11.0"
+        versionCode = 12
+        versionName = "12.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared", "-DCMAKE_BUILD_TYPE=Release", "-DGGML_LLAMAFILE=ON"); cppFlags += "-O3" } }   // современные телефоны (64 бит); без 32-битных и x86 — APK заметно меньше (ONNX Runtime и MediaPipe тяжёлые)
         // Адрес вашего сервера и Web client ID для входа через Google (из google-services.json)

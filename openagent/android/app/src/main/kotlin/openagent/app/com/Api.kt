@@ -139,6 +139,7 @@ class Store(ctx: Context) {
     var gestureWake: Boolean get() = p.getBoolean("gestureWake", false); set(v) = p.edit().putBoolean("gestureWake", v).apply()
     var bioStrict: String get() = p.getString("bioStrict", "normal") ?: "normal"; set(v) = p.edit().putString("bioStrict", v).apply()
     var offlineMode: Boolean get() = p.getBoolean("offlineMode", false); set(v) = p.edit().putBoolean("offlineMode", v).apply()
+    var chatModel: String get() = p.getString("chatModel", "lfm") ?: "lfm"; set(v) = p.edit().putString("chatModel", v).apply()
     var phoneModelUrl: String get() = p.getString("phoneModelUrl", "") ?: ""; set(v) = p.edit().putString("phoneModelUrl", v).apply()
     var clapWake: Boolean get() = p.getBoolean("clapWake", false); set(v) = p.edit().putBoolean("clapWake", v).apply()
     var clapSens: String get() = p.getString("clapSens", "normal") ?: "normal"; set(v) = p.edit().putString("clapSens", v).apply()

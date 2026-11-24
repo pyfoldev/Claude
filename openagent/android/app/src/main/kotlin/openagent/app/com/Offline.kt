@@ -14,9 +14,12 @@ import java.io.RandomAccessFile
 object Offline {
     class Spec(val id: String, val title: String, val file: String, val size: Long, val url: (Store) -> String)
 
-    val CHAT = Spec("chat", "Чат — Ministral 3 3B Instruct", "ministral-3-3b-q4.gguf", 2_147_023_008L) { "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf" }
+    val LFM = Spec("lfm", "Чат — LFM2.5 1.2B Saiga (быстрый)", "lfm25-saiga-q4.gguf", 730_897_856L) { "https://huggingface.co/mradermacher/LFM2.5-1.2B-Saiga-It-v3-i1-GGUF/resolve/main/LFM2.5-1.2B-Saiga-It-v3.i1-Q4_K_M.gguf" }
+    val CHAT = Spec("chat", "Чат — Ministral 3 3B Instruct (умнее, тяжелее)", "ministral-3-3b-q4.gguf", 2_147_023_008L) { "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf" }
     val PHONE = Spec("phone", "Управление телефоном — OpenAgent Phone 0.6B", "phone.gguf", 444_000_000L) { it.phoneModelUrl.ifBlank { it.server.trimEnd('/') + "/models/phone.gguf" } }
-    val ALL = listOf(CHAT, PHONE)
+    val ALL = listOf(LFM, CHAT, PHONE)
+    @Volatile var chatId = "lfm"                       // какая модель отвечает в чате: lfm | chat (Ministral)
+    fun chatSpec() = if (chatId == "chat") CHAT else LFM
 
     val progress = mutableStateMapOf<String, Float>()      // 0..1 — идёт загрузка
     val error = mutableStateOf("")
@@ -141,11 +144,16 @@ object Offline {
     private fun chatPrompt(history: List<Pair<String, String>>): String {
         val date = java.text.SimpleDateFormat("d MMMM yyyy, EEEE", java.util.Locale("ru")).format(java.util.Date())
         val sys = "Ты — OpenAgent, ассистент на телефоне владельца. Сейчас работаешь без интернета, прямо на устройстве. Отвечай по-человечески, кратко и по делу, на языке собеседника. Сегодня $date. Ты не можешь искать в сети и не знаешь новостей; если для ответа нужен интернет или свежие данные — так и скажи. Команды вроде «открой приложение», «поставь будильник», «включи фонарик» обрабатываются отдельно; если просят что-то с телефоном, чего не получилось сделать, предложи сформулировать проще."
-        val sb = StringBuilder("[SYSTEM_PROMPT]").append(sys).append("[/SYSTEM_PROMPT]")
+        val lfm = chatSpec() === LFM
+        val sb = StringBuilder(if (lfm) "<|im_start|>system\n$sys<|im_end|>\n" else "[SYSTEM_PROMPT]$sys[/SYSTEM_PROMPT]")
         // окно контекста небольшое — берём хвост диалога по размеру
         var budget = 7000; val keep = ArrayList<Pair<String, String>>()
         for (m in history.asReversed()) { budget -= m.second.length; if (budget < 0 && keep.isNotEmpty()) break; keep.add(0, m) }
-        for ((role, text) in keep) { if (role == "user") sb.append("[INST]").append(text).append("[/INST]") else sb.append(text).append("</s>") }
+        for ((role, text) in keep) {
+            if (lfm) sb.append("<|im_start|>").append(if (role == "user") "user" else "assistant").append("\n").append(text).append("<|im_end|>\n")
+            else if (role == "user") sb.append("[INST]").append(text).append("[/INST]") else sb.append(text).append("</s>")
+        }
+        if (lfm) sb.append("<|im_start|>assistant\n")
         return sb.toString()
     }
 
@@ -163,10 +171,10 @@ object Offline {
                 return execute(ctx, r.actions)
             }
         }
-        if (!ready(ctx, CHAT)) return "Оффлайн-модель чата ещё не загружена: Настройки → Оффлайн-режим."
+        if (!ready(ctx, chatSpec())) return "Оффлайн-модель чата ещё не загружена: Настройки → Оффлайн-режим."
         onStatus("Думаю…")
         return withContext(Dispatchers.Default) {
-            val m = engine(ctx, CHAT, 4096) ?: return@withContext "Не удалось загрузить модель — возможно, не хватает памяти телефона."
+            val m = engine(ctx, chatSpec(), 4096) ?: return@withContext "Не удалось загрузить модель — возможно, не хватает памяти телефона."
             val sb = StringBuilder()
             try { m.generate(chatPrompt(history + ("user" to text)), 700, 0.5f, 0.9f, 1.05f) { piece -> sb.append(piece); onDelta(piece); !stopRequested } }
             catch (e: Throwable) { return@withContext "Ошибка модели: ${e.message}" }
