@@ -42,6 +42,7 @@ fun Screen() {
     val prefs = remember { ctx.getSharedPreferences("p", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     var key by remember { mutableStateOf(prefs.getString("key", "") ?: "") }
+    var model by remember { mutableStateOf(prefs.getString("model", RiverClient.DEFAULT_MODEL) ?: RiverClient.DEFAULT_MODEL) }
     var topic by remember { mutableStateOf("") }
     var font by remember { mutableStateOf(FONTS[0].first) }
     var words by remember { mutableFloatStateOf(80f) }
@@ -59,8 +60,9 @@ fun Screen() {
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp).statusBarsPadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Тетрадь AI", style = MaterialTheme.typography.headlineSmall)
-        OutlinedTextField(key, { key = it; prefs.edit().putString("key", it).apply() }, label = { Text("Anthropic API-ключ") },
+        OutlinedTextField(key, { key = it; prefs.edit().putString("key", it).apply() }, label = { Text("River AI API-ключ (rv_...)") },
             visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(model, { model = it; prefs.edit().putString("model", it).apply() }, label = { Text("Модель") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(topic, { topic = it }, label = { Text("Тема") }, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FONTS.forEach { (id, name) -> FilterChip(font == id, { font = id }, { Text(name) }) }
@@ -73,7 +75,7 @@ fun Screen() {
             busy = true
             scope.launch {
                 try {
-                    val text = ClaudeClient.generate(key.trim(), topic.trim(), words.toInt())
+                    val text = RiverClient.generate(key.trim(), model.trim(), topic.trim(), words.toInt())
                     pages = withContext(Dispatchers.Default) {
                         NotebookRenderer.render(ctx, text, RenderOptions(font = font, cell = cell.toInt(), messiness = mess, background = bg))
                     }

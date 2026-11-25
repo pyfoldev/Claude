@@ -7,37 +7,33 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-object ClaudeClient {
-    private const val MODEL = "claude-haiku-5-5"
+/** River AI: OpenAI-совместимый API, https://docs.river.ai/guides/inference/ */
+object RiverClient {
+    const val DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash"
 
-    suspend fun generate(apiKey: String, topic: String, words: Int): String = withContext(Dispatchers.IO) {
+    suspend fun generate(apiKey: String, model: String, topic: String, words: Int): String = withContext(Dispatchers.IO) {
         val prompt = """Ты школьник, который пишет в рабочей тетради домашнюю работу.
 Тема: $topic
 Напиши конспект/ответ примерно на $words слов на языке темы. Коротко, как пишут от руки:
 заголовок первой строкой, затем пункты "1.", "2." и т.д. Только простой текст:
 без markdown, без звёздочек, без эмодзи, без таблиц."""
         val body = JSONObject()
-            .put("model", MODEL)
-            .put("max_tokens", 1500)
+            .put("model", model)
+            .put("max_tokens", 6000) // запас на «размышления» модели
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
-        val c = URL("https://api.anthropic.com/v1/messages").openConnection() as HttpURLConnection
+        val c = URL("https://api.river.ai/v1/chat/completions").openConnection() as HttpURLConnection
         c.requestMethod = "POST"
         c.connectTimeout = 20000
-        c.readTimeout = 60000
+        c.readTimeout = 120000
         c.doOutput = true
-        c.setRequestProperty("content-type", "application/json")
-        c.setRequestProperty("x-api-key", apiKey)
-        c.setRequestProperty("anthropic-version", "2023-06-01")
+        c.setRequestProperty("Content-Type", "application/json")
+        c.setRequestProperty("Authorization", "Bearer $apiKey")
         c.outputStream.use { it.write(body.toString().toByteArray()) }
         val code = c.responseCode
         val text = (if (code in 200..299) c.inputStream else c.errorStream).bufferedReader().readText()
-        if (code !in 200..299) error("API $code: $text")
-        val parts = JSONObject(text).getJSONArray("content")
-        buildString {
-            for (i in 0 until parts.length()) {
-                val p = parts.getJSONObject(i)
-                if (p.optString("type") == "text") append(p.getString("text"))
-            }
-        }.trim()
+        if (code !in 200..299) error("River API $code: $text")
+        val content = JSONObject(text).getJSONArray("choices").getJSONObject(0)
+            .getJSONObject("message").optString("content", "")
+        content.replace("**", "").replace("#", "").trim().ifEmpty { error("Пустой ответ модели") }
     }
 }
