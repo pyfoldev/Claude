@@ -12,11 +12,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
+import androidx.compose.material3.Text
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 
 class MainActivity : ComponentActivity() {
     private val vm: AppVM by viewModels()
+    private var guardReport by mutableStateOf<String?>(null)
 
     override fun onStart() { super.onStart(); vm.inForeground = true; vm.onStartedLock(); vm.onAppResume() }
     override fun onStop() { super.onStop(); vm.inForeground = false; vm.onStopped() }
@@ -47,17 +50,31 @@ class MainActivity : ComponentActivity() {
             runCatching { java.io.File(filesDir, "crash.txt").writeText(java.util.Date().toString() + " [" + t.name + "]\n" + android.util.Log.getStackTraceString(e).take(6000)) }
             prev?.uncaughtException(t, e)
         }
+        // Защита от «вылета при запуске»: если прошлый запуск не дожил до 5 секунд работы — отключаем необязательные функции и показываем отчёт о сбое
+        val guard = getSharedPreferences("guard", MODE_PRIVATE)
+        val crashed = guard.getLong("startedAt", 0) > guard.getLong("okAt", 0)
+        guard.edit().putLong("startedAt", System.currentTimeMillis()).apply()
+        if (crashed) {
+            val stt = Store(this)
+            stt.clapWake = false; stt.gestureWake = false; stt.callScreen = false; stt.offlineMode = false; stt.gateSessions = false
+            runCatching { ClapService.stop(this) }; runCatching { CallScreenService.stop(this) }
+            guardReport = runCatching { java.io.File(filesDir, "crash.txt").takeIf { it.exists() }?.readText() }.getOrNull() ?: "Отчёта о сбое нет (сбой произошёл до его записи)."
+        }
         enableEdgeToEdge()
         handleShare(intent)
-        if (vm.user != null || Store(this).token != null) UpdatesWorker.schedule(this, Store(this).notifyAuto)
-        if (Store(this).callScreen) CallScreenService.start(this)
-        if (Store(this).clapWake) ClapService.start(this)
+        runCatching { if (vm.user != null || Store(this).token != null) UpdatesWorker.schedule(this, Store(this).notifyAuto) }
+        if (!crashed) {
+            runCatching { if (Store(this).callScreen) CallScreenService.start(this) }
+            runCatching { if (Store(this).clapWake) ClapService.start(this) }
+        }
         Haptics.init(this)
         setContent {
+            LaunchedEffect(Unit) { kotlinx.coroutines.delay(5000); guard.edit().putLong("okAt", System.currentTimeMillis()).apply() }
             OpenAgentTheme(vm.dynamicColor, vm.fontScale, vm.amoled) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalVM provides vm) {
                 Box(Modifier.fillMaxSize().background(C.bg)) {
                     Backdrop()
+                    guardReport?.let { rep -> AppDialog("Приложение вылетало при запуске", { guardReport = null }, "Скопировать отчёт", true, { copyToClipboard(this@MainActivity, rep); guardReport = null }) { Text("Я отключил хлопок, жест, оффлайн-режим, автоответчик и проверку голосом/лицом — включите их заново в настройках. Отчёт о сбое ниже: скопируйте и пришлите его разработчику.", color = C.dim, fontSize = 13.sp); Text(rep.take(1500), color = C.text, fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) } }
                     LaunchedEffect(vm.askOnStart, vm.user, vm.booting) { val t = vm.askOnStart; if (t != null && vm.user != null && !vm.booting) { vm.askOnStart = null; vm.newChat("chat"); vm.sendWithScreen(t) } }
                     val phase = when { vm.booting -> "boot"; vm.user == null -> "login"; vm.onboarding -> "Onboarding"; else -> vm.screen.name }
                     vm.preview?.let { (u, t) -> SitePreview(vm, u, t) { vm.preview = null } }

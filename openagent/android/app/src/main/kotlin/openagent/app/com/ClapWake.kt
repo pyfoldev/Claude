@@ -185,6 +185,10 @@ class ClapService : Service() {
                 ClapState.last = "хлопок %.2f / удар %.2f (нужно %.2f), аплодисменты %.2f, речь %.2f → %s".format(clap, perc, thr, sc[ClapIdx.APPLAUSE], sc[ClapIdx.SPEECH], if (pass) "вызов" else "игнор")
                 if (pass) { cooldownUntil = System.currentTimeMillis() + 6000; ClapState.fired++; ClapWake.fire(this) }
             }
+        } catch (t: Throwable) {
+            ClapState.last = "сбой: ${t.javaClass.simpleName}: ${t.message}"
+            runCatching { java.io.File(filesDir, "crash.txt").writeText(java.util.Date().toString() + " [ClapService]\n" + android.util.Log.getStackTraceString(t).take(6000)) }
+            runCatching { Store(this).clapWake = false }; stopSelf()
         } finally { rec?.let { runCatching { it.stop() }; runCatching { it.release() } }; yam.close(); running = false; ClapState.running = false }
     }
 
