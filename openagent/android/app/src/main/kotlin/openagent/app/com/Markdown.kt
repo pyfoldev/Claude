@@ -182,6 +182,7 @@ fun SvgBlock(code: String, ctx: Context) {
             Text(if (animated) "SVG · анимация" else "SVG", color = C.dim, fontSize = 12.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
             Text(if (showCode) "Скрыть код" else "Код", color = C.dim, fontSize = 12.sp, modifier = Modifier.clickable { showCode = !showCode }.padding(8.dp))
             Text("Копировать", color = C.dim, fontSize = 12.sp, modifier = Modifier.clickable { copyToClipboard(ctx, svg) }.padding(8.dp))
+            Text("В «Загрузки»", color = C.dim, fontSize = 12.sp, modifier = Modifier.clickable { val n = Dl.saveText(ctx, svg, "image.svg", "image/svg+xml"); android.widget.Toast.makeText(ctx, if (n != null) "Сохранено в «Загрузки»: $n" else "Не удалось сохранить", android.widget.Toast.LENGTH_SHORT).show() }.padding(8.dp))
             Text("Поделиться", color = C.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable {
                 runCatching {
                     val f = java.io.File(java.io.File(ctx.cacheDir, "dl").also { it.mkdirs() }, "image.svg").also { it.writeText(svg) }

@@ -630,6 +630,8 @@ class AppVM(app: Application) : AndroidViewModel(app) {
             val e = api.exportChat(id)
             val ctx = getApplication<Application>()
             val f = File(File(ctx.cacheDir, "dl").also { it.mkdirs() }, e.name.ifBlank { "chat.md" }).also { it.writeText(e.markdown) }
+            val saved = withContext(Dispatchers.IO) { Dl.save(ctx, f, e.name.ifBlank { "chat.md" }, "text/markdown") }
+            toast = if (saved != null) "Чат сохранён в «Загрузки»: $saved" else "Не удалось сохранить в «Загрузки»"
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
             ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/markdown").putExtra(Intent.EXTRA_STREAM, uri).putExtra(Intent.EXTRA_TEXT, e.markdown.take(4000)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Экспорт чата").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }.onFailure(::err)
@@ -742,7 +744,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
             .setAllowedOverMetered(true).setAllowedOverRoaming(true)
         if (a.mime.isNotBlank()) r.setMimeType(a.mime)
         if (android.os.Build.VERSION.SDK_INT >= 29) r.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
-        else r.setDestinationInExternalFilesDir(ctx, android.os.Environment.DIRECTORY_DOWNLOADS, name)
+        else r.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
         dm.enqueue(r)
         toast = "Скачивание ${name} (${a.size / 1_000_000} МБ) идёт в фоне — прогресс в шторке, файл появится в «Загрузки»"
         true
@@ -755,6 +757,8 @@ class AppVM(app: Application) : AndroidViewModel(app) {
             val ctx = getApplication<Application>()
             runCatching { File(ctx.cacheDir, "dl").listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 86_400_000L }?.forEach { it.delete() } }   // старые скачанные копии не копим
             val f = api.download(a.id, a.name, File(ctx.cacheDir, "dl"))
+            val saved = withContext(Dispatchers.IO) { Dl.save(ctx, f, a.name, a.mime) }
+            toast = if (saved != null) "Сохранено в «Загрузки»: $saved" else "Не удалось сохранить в «Загрузки»"
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
             val mime = if (a.name.endsWith(".apk")) "application/vnd.android.package-archive" else a.mime.ifBlank { "*/*" }
             val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -762,7 +766,6 @@ class AppVM(app: Application) : AndroidViewModel(app) {
                 ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), a.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
-            toast = null
         }.onFailure(::err)
     }
 
@@ -1286,9 +1289,8 @@ class AppVM(app: Application) : AndroidViewModel(app) {
     fun exportBackup() = viewModelScope.launch {
         runCatching {
             val ctx = getApplication<Application>(); val json = api.exportAll()
-            val f = File(File(ctx.cacheDir, "dl").also { it.mkdirs() }, "openagent-backup.json").also { it.writeText(json) }
-            val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
-            ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Резервная копия").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val saved = withContext(Dispatchers.IO) { Dl.saveText(ctx, json, "openagent-backup.json", "application/json") }
+            toast = if (saved != null) "Резервная копия сохранена в «Загрузки»: $saved" else "Не удалось сохранить в «Загрузки»"
         }.onFailure(::err)
     }
     fun addDaily(name: String, prompt: String, time: String, mode: String) = viewModelScope.launch { runCatching { api.addDaily(name, prompt, time, mode) }.onFailure(::err); loadSchedules().join() }
@@ -1337,6 +1339,8 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         runCatching {
             val ctx = getApplication<Application>()
             val f = api.fsDownload(path, name, File(ctx.cacheDir, "dl"))
+            val saved = withContext(Dispatchers.IO) { Dl.save(ctx, f, name) }
+            toast = if (saved != null) "Сохранено в «Загрузки»: $saved" else "Не удалось сохранить в «Загрузки»"
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
             val mime = if (name.endsWith(".apk")) "application/vnd.android.package-archive" else "*/*"
             val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
