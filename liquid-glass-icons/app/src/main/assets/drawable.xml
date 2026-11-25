@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<drawables>
+    <version>1</version>
+    <category title="Все" />
+    <item drawable="glass_phone" />
+    <item drawable="glass_contacts" />
+    <item drawable="glass_messages" />
+    <item drawable="glass_camera" />
+    <item drawable="glass_photos" />
+    <item drawable="glass_gmail" />
+    <item drawable="glass_maps" />
+    <item drawable="glass_chrome" />
+    <item drawable="glass_playstore" />
+    <item drawable="glass_youtube" />
+    <item drawable="glass_music" />
+    <item drawable="glass_spotify" />
+    <item drawable="glass_settings" />
+    <item drawable="glass_clock" />
+    <item drawable="glass_calendar" />
+    <item drawable="glass_calculator" />
+    <item drawable="glass_drive" />
+    <item drawable="glass_files" />
+    <item drawable="glass_notes" />
+    <item drawable="glass_telegram" />
+    <item drawable="glass_whatsapp" />
+    <item drawable="glass_instagram" />
+    <item drawable="glass_weather" />
+    <item drawable="glass_wallet" />
+    <item drawable="glass_assistant" />
+    <item drawable="glass_recorder" />
+    <item drawable="glass_health" />
+    <item drawable="glass_books" />
+    <item drawable="glass_games" />
+    <item drawable="glass_translate" />
+    <item drawable="glass_meet" />
+    <item drawable="glass_wifi" />
+    <item drawable="glass_bolt" />
+    <item drawable="glass_star" />
+    <item drawable="glass_home" />
+    <item drawable="glass_search" />
+    <item drawable="glass_security" />
+    <item drawable="glass_gift" />
+    <item drawable="glass_pin" />
+</drawables>

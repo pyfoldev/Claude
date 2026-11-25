@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="icon_names">
+        <item>phone</item>
+        <item>contacts</item>
+        <item>messages</item>
+        <item>camera</item>
+        <item>photos</item>
+        <item>gmail</item>
+        <item>maps</item>
+        <item>chrome</item>
+        <item>playstore</item>
+        <item>youtube</item>
+        <item>music</item>
+        <item>spotify</item>
+        <item>settings</item>
+        <item>clock</item>
+        <item>calendar</item>
+        <item>calculator</item>
+        <item>drive</item>
+        <item>files</item>
+        <item>notes</item>
+        <item>telegram</item>
+        <item>whatsapp</item>
+        <item>instagram</item>
+        <item>weather</item>
+        <item>wallet</item>
+        <item>assistant</item>
+        <item>recorder</item>
+        <item>health</item>
+        <item>books</item>
+        <item>games</item>
+        <item>translate</item>
+        <item>meet</item>
+        <item>wifi</item>
+        <item>bolt</item>
+        <item>star</item>
+        <item>home</item>
+        <item>search</item>
+        <item>security</item>
+        <item>gift</item>
+        <item>pin</item>
+    </string-array>
+</resources>
