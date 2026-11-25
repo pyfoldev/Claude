@@ -27,29 +27,37 @@ object NotebookRenderer {
             style = Paint.Style.FILL_AND_STROKE; strokeWidth = 0.9f
         }
         val pageH = o.background?.let { (W.toFloat() / it.width * it.height).toInt() } ?: (o.cell * 36)
-        val left = o.cell * 2.6f + o.cell * 0.4f
-        val right = W - o.cell * 1.2f
+        val redLeft = o.background?.let { findRedMarginX(it, left = true) }
+        val left = if (redLeft != null) redLeft + o.cell * 0.7f else o.cell * 3f
+        val redX = o.background?.let { findRedMarginX(it) }
+        val right = (if (redX != null && redX > W * 0.5f) redX - o.cell * 0.7f else W - o.cell * 1.2f)
         val top = o.cell * 2.5f
         val linesPerPage = ((pageH - top - o.cell) / o.cell).toInt()
 
-        // раскладка по строкам
-        val lines = ArrayList<String>()
-        for (para in text.split("\n")) {
-            if (para.isBlank()) { lines.add(""); continue }
+        // раскладка по строкам: (текст, красная строка?) ; запас на разброс ширины букв
+        val safety = 1.10f
+        val lines = ArrayList<Pair<String, Boolean>>()
+        val paras = text.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        paras.forEachIndexed { pi, para ->
+            val indentPx = if (pi == 0) 0f else o.cell * 1.6f
+            var first = true
             var cur = ""
-            for (w in para.split(" ")) {
+            fun limit() = right - left - (if (first) indentPx else 0f)
+            for (w in para.split(" ").filter { it.isNotEmpty() }) {
                 val t = if (cur.isEmpty()) w else "$cur $w"
-                if (pen.measureText(t) > right - left && cur.isNotEmpty()) { lines.add(cur); cur = w } else cur = t
+                if (pen.measureText(t) * safety > limit() && cur.isNotEmpty()) {
+                    lines.add(cur to (first && pi > 0)); first = false; cur = w
+                } else cur = t
             }
-            lines.add(cur)
+            lines.add(cur to (first && pi > 0))
         }
 
         val pages = ArrayList<Bitmap>()
         for (chunk in lines.chunked(max(1, linesPerPage))) {
             val bmp = newPage(o, pageH)
             val c = Canvas(bmp)
-            chunk.forEachIndexed { i, line ->
-                var x = left + rnd.nextFloat() * o.cell * 0.4f * m
+            chunk.forEachIndexed { i, (line, indent) ->
+                var x = left + (if (indent) o.cell * 1.6f else 0f) + rnd.nextFloat() * o.cell * 0.3f * m
                 val baseY = top + (i + 1) * o.cell - o.cell * 0.12f
                 var drift = 0f
                 val rowTilt = (rnd.nextFloat() - 0.5f) * 0.012f * m   // строка едет вверх/вниз
@@ -70,7 +78,7 @@ object NotebookRenderer {
                     c.restore()
                     // редкая клякса
                     if (ch != ' ' && rnd.nextInt(500) == 0 && m > 0.3f) blot(c, x + wch / 2, baseY + dy - textSize * 0.3f, o.ink, rnd)
-                    x += wch * (0.92f + rnd.nextFloat() * 0.2f * m) + (if (ch == ' ') o.cell * 0.15f * rnd.nextFloat() * m else 0f)
+                    x += wch * (0.95f + rnd.nextFloat() * 0.12f * m) + (if (ch == ' ') o.cell * 0.1f * rnd.nextFloat() * m else 0f)
                     if (k < 0) break
                 }
             }
@@ -121,5 +129,26 @@ object NotebookRenderer {
         val n = Paint().apply { color = Color.BLACK; alpha = 14 }
         repeat(14000) { c.drawPoint(rnd.nextInt(w).toFloat(), rnd.nextInt(h).toFloat(), n) }
         return out
+    }
+
+    /** x (в координатах страницы шириной W) красной линии поля на фото; null если не найдена */
+    private fun findRedMarginX(bg: Bitmap, left: Boolean = false): Float? {
+        val bw = bg.width; val bh = bg.height
+        val from = if (left) 0 else (bw * 0.5f).toInt()
+        val to = if (left) (bw * 0.5f).toInt() else bw
+        val score = FloatArray(to - from)
+        val rows = 60
+        val row = IntArray(bw)
+        for (r in 0 until rows) {
+            bg.getPixels(row, 0, bw, 0, (bh * (0.1f + 0.8f * r / rows)).toInt().coerceIn(0, bh - 1), bw, 1)
+            for (x in from until to) {
+                val c = row[x]
+                score[x - from] += (Color.red(c) - (Color.green(c) + Color.blue(c)) / 2f).coerceAtLeast(0f)
+            }
+        }
+        var bi = 0
+        for (i in score.indices) if (score[i] > score[bi]) bi = i
+        val avg = score[bi] / rows
+        return if (avg > 18f) (from + bi).toFloat() / bw * W else null
     }
 }
