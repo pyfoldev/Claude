@@ -11,7 +11,7 @@ const names = (defs) => defs.map((d) => d.function.name);
 let calls = []; globalThis.fetch = async (url, o = {}) => { calls.push({ url: String(url), method: o.method || 'GET' }); return new Response(JSON.stringify({ ok: true, result: [] }), { status: 200 }); };
 
 ok('главный создаётся сам', listAgents(user.id).length === 1 && listAgents(user.id)[0].is_main === 1);
-ok('каталог: 20 коннекторов, ничего не подключено', catalog(user.id).length === 20 && connectedIds(user.id).length === 0);
+ok('каталог: 20 коннекторов, ничего не подключено', catalog(user.id).length === 22 && connectedIds(user.id).length === 0);
 try { saveCreds(user.id, 'telegram', { bot_token: '' }); ok('пустой токен отклоняется', false); } catch (e) { ok('пустой токен отклоняется', /Заполните/.test(e.message), e.message); }
 saveCreds(user.id, 'telegram', { bot_token: '123:abc', chat_id: '42' }); saveCreds(user.id, 'todoist', { token: 'tdtok' });
 const cat = catalog(user.id).find((c) => c.id === 'telegram');

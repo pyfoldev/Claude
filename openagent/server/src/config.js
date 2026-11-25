@@ -56,6 +56,7 @@ export const config = {
     sender: env.SENDER_EMAIL || '',
   },
   turnstile: { siteKey: env.TURNSTILE_SITE_KEY || '', secret: env.TURNSTILE_SECRET || '' },
+  googleOAuth: { clientId: env.GOOGLE_OAUTH_CLIENT_ID || '', clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET || '' },   // клиент типа «Веб-приложение» для подключения Gmail/Календаря (не тот же, что для входа в приложение)
   googleClientIds: (env.GOOGLE_CLIENT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
   githubClientId: env.GITHUB_CLIENT_ID || '',
 };

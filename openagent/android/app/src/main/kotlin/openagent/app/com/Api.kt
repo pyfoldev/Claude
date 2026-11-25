@@ -21,7 +21,8 @@ import java.util.concurrent.TimeUnit
 @Serializable data class AgentsResp(val agents: List<AgentItem> = emptyList(), val templates: List<AgentTemplate> = emptyList(), val connectors: List<ConnBrief> = emptyList())
 @Serializable data class ConnField(val k: String, val label: String, val secret: Boolean = false, val hint: String = "", val value: String = "", val opt: Boolean = false)
 @Serializable data class ConnAction(val name: String, val desc: String = "", val write: Boolean = false)
-@Serializable data class Connector(val id: String, val name: String, val icon: String = "", val desc: String = "", val connected: Boolean = false, val fields: List<ConnField> = emptyList(), val actions: List<ConnAction> = emptyList())
+@Serializable data class Connector(val id: String, val name: String, val icon: String = "", val desc: String = "", val connected: Boolean = false, val oauth: String = "", val oauthReady: Boolean = true, val account: String = "", val fields: List<ConnField> = emptyList(), val actions: List<ConnAction> = emptyList())
+@Serializable data class OAuthStart(val url: String)
 @Serializable data class AgentRun(val ok: Boolean = false, val convId: Int? = null)
 @Serializable data class TestResult(val result: String = "")
 @Serializable data class Conv(val id: Int, val title: String, val mode: String = "chat", val pinned: Boolean = false, val persona: String = "", val projectId: Int? = null, val updatedAt: Long = 0, val running: Boolean = false)
@@ -427,6 +428,7 @@ class Api(private val store: Store) {
         val b = buildJsonObject { putJsonObject("fields") { fields.forEach { (k, v) -> put(k, v) } } }.toString().toRequestBody(jsonType)
         exec(req("/api/integrations/$id").put(b).build())
     }
+    suspend fun googleStart(): OAuthStart = post("/api/oauth/google/start", "services" to listOf("gmail", "calendar"))
     suspend fun removeIntegration(id: String) { exec(req("/api/integrations/$id").delete().build()) }
     suspend fun testIntegration(id: String): TestResult = post("/api/integrations/$id/test")
     suspend fun missions(): List<MissionItem> = get("/api/missions")

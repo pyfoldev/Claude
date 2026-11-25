@@ -1,6 +1,7 @@
 // Коннекторы: подключения к внешним сервисам по токену/ключу. Каждый коннектор — набор действий; подключённые превращаются в инструменты агента int_<коннектор>_<действие>.
 // Действия, которые что-то меняют/отправляют (write: true), без разрешения не выполняются: в обычном чате — после «да» пользователя, у автономного агента — только если ему разрешена запись.
 import { db, now } from './db.js';
+import { googleAccess, googleServices, googleRevoke, googleReady, googleEmail } from './googleOAuth.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS integrations (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, connector TEXT NOT NULL, creds TEXT NOT NULL, created_at INTEGER NOT NULL,
@@ -157,29 +158,68 @@ export const CONNECTORS = [
     actions: [{ name: 'send_sms', write: true, desc: 'Отправить SMS', params: obj({ to: { type: 'string', description: '+7…' }, body: S }, ['to', 'body']), run: (c, a, s) => http(`https://api.twilio.com/2010-04-01/Accounts/${c.sid}/Messages.json`, { method: 'POST', headers: basic(c.sid, c.auth), form: { To: a.to, From: c.from, Body: String(a.body).slice(0, 1500) }, signal: s }).then((j) => `Отправлено (${j.status})`) }] },
 ];
 
+// ---- Google (OAuth): Gmail и Календарь. Вход выполняется через googleOAuth.js; здесь только действия ----
+const G = (t) => ({ headers: bearer(t) });
+const b64u = (s) => Buffer.from(s).toString('base64url');
+const hdr = (m, n) => (m.payload?.headers || []).find((h) => h.name.toLowerCase() === n.toLowerCase())?.value || '';
+const mimeWord = (t) => (/^[\x20-\x7e]*$/.test(t) ? t : `=?UTF-8?B?${Buffer.from(t).toString('base64')}?=`);
+function bodyText(p) {
+  if (!p) return '';
+  if (p.mimeType === 'text/plain' && p.body?.data) return Buffer.from(p.body.data, 'base64url').toString('utf8');
+  for (const x of p.parts || []) { const t = bodyText(x); if (t) return t; }
+  if (p.mimeType === 'text/html' && p.body?.data) return Buffer.from(p.body.data, 'base64url').toString('utf8').replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  return '';
+}
+const GM = 'https://gmail.googleapis.com/gmail/v1/users/me';
+const CAL = 'https://www.googleapis.com/calendar/v3';
+const evTime = (e) => e.start?.dateTime ? e.start.dateTime.slice(0, 16).replace('T', ' ') : e.start?.date || '';
+const evLine = (e) => `${evTime(e)} ${e.summary || '(без названия)'}${e.location ? ` @ ${e.location}` : ''}${e.attendees?.length ? ` · гостей ${e.attendees.length}` : ''} [id ${e.id}]`;
+const when = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? { date: v } : { dateTime: v });
+CONNECTORS.push(
+  { id: 'gmail', name: 'Gmail', icon: '📧', desc: 'Письма Gmail: поиск, чтение, черновики, отправка, архив', oauth: 'google', aliases: /gmail|гмейл|почт|письм|e-?mail|inbox|входящ/i, fields: [],
+    actions: [
+      { name: 'list_messages', desc: 'Найти письма (синтаксис поиска Gmail: is:unread, from:…, newer_than:2d, label:…)', params: obj({ query: S, max: I }), run: async (c, a, s) => { const j = await http(`${GM}/messages?${qs({ q: a.query || 'in:inbox', maxResults: Math.min(+a.max || 10, 25) })}`, { ...G(c.token), signal: s }); const ids = (j.messages || []).map((m) => m.id); const ms = await Promise.all(ids.map((id) => http(`${GM}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, { ...G(c.token), signal: s }).catch(() => null))); return ms.filter(Boolean).map((m) => `${m.id} | ${hdr(m, 'Date').slice(0, 22)} | ${hdr(m, 'From').slice(0, 50)} | ${hdr(m, 'Subject').slice(0, 90)}${m.labelIds?.includes('UNREAD') ? ' [новое]' : ''}\n   ${(m.snippet || '').slice(0, 140)}`).join('\n') || 'Писем нет'; } },
+      { name: 'read_message', desc: 'Прочитать письмо целиком по id', params: obj({ id: S }, ['id']), run: (c, a, s) => http(`${GM}/messages/${a.id}?format=full`, { ...G(c.token), signal: s }).then((m) => `От: ${hdr(m, 'From')}\nКому: ${hdr(m, 'To')}\nТема: ${hdr(m, 'Subject')}\nДата: ${hdr(m, 'Date')}\nThread: ${m.threadId}\n\n${bodyText(m.payload).slice(0, 6000) || m.snippet || '(пусто)'}`) },
+      { name: 'create_draft', desc: 'Создать черновик письма (не отправляет)', params: obj({ to: S, subject: S, body: S }, ['to', 'subject', 'body']), run: async (c, a, s) => { const raw = b64u(`To: ${a.to}\r\nSubject: ${mimeWord(a.subject)}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${Buffer.from(a.body).toString('base64')}`); const j = await http(`${GM}/drafts`, { method: 'POST', ...G(c.token), body: { message: { raw } }, signal: s }); return `Черновик создан (id ${j.id}) — он в папке «Черновики» Gmail`; } },
+      { name: 'send_message', write: true, desc: 'Отправить письмо (reply_thread_id — ответ в существующую переписку)', params: obj({ to: S, subject: S, body: S, reply_thread_id: S }, ['to', 'subject', 'body']), run: async (c, a, s) => { const raw = b64u(`To: ${a.to}\r\nSubject: ${mimeWord(a.subject)}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${Buffer.from(a.body).toString('base64')}`); await http(`${GM}/messages/send`, { method: 'POST', ...G(c.token), body: { raw, ...(a.reply_thread_id ? { threadId: a.reply_thread_id } : {}) }, signal: s }); return 'Письмо отправлено'; } },
+      { name: 'modify_message', write: true, desc: 'Пометить письмо: mark_read | mark_unread | archive | star | trash', params: obj({ id: S, action: { type: 'string', enum: ['mark_read', 'mark_unread', 'archive', 'star', 'trash'] } }, ['id', 'action']), run: async (c, a, s) => { if (a.action === 'trash') { await http(`${GM}/messages/${a.id}/trash`, { method: 'POST', ...G(c.token), signal: s }); return 'В корзине'; } const m = { mark_read: { removeLabelIds: ['UNREAD'] }, mark_unread: { addLabelIds: ['UNREAD'] }, archive: { removeLabelIds: ['INBOX'] }, star: { addLabelIds: ['STARRED'] } }[a.action]; if (!m) throw new Error('неизвестное действие'); await http(`${GM}/messages/${a.id}/modify`, { method: 'POST', ...G(c.token), body: m, signal: s }); return 'Готово'; } },
+    ] },
+  { id: 'calendar', name: 'Google Календарь', icon: '🗓️', desc: 'События Google Календаря: смотреть, создавать, переносить, искать свободное время', oauth: 'google', aliases: /календар|расписани|встреч|событи|google calendar|свободн\S* (врем|окн)|назначь|запиши (на|в)/i, fields: [],
+    actions: [
+      { name: 'list_events', desc: 'События на ближайшие дни (days, по умолчанию 7) или по тексту query', params: obj({ days: I, query: S, calendar_id: S }), run: (c, a, s) => http(`${CAL}/calendars/${encodeURIComponent(a.calendar_id || 'primary')}/events?${qs({ timeMin: new Date().toISOString(), timeMax: new Date(Date.now() + Math.min(+a.days || 7, 90) * 864e5).toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: 40, q: a.query })}`, { ...G(c.token), signal: s }).then((j) => (j.items || []).map(evLine).join('\n') || 'Событий нет') },
+      { name: 'free_busy', desc: 'Занятые интервалы на ближайшие дни — чтобы найти свободное время', params: obj({ days: I }), run: (c, a, s) => http(`${CAL}/freeBusy`, { method: 'POST', ...G(c.token), body: { timeMin: new Date().toISOString(), timeMax: new Date(Date.now() + Math.min(+a.days || 3, 30) * 864e5).toISOString(), items: [{ id: 'primary' }] }, signal: s }).then((j) => (j.calendars?.primary?.busy || []).map((b) => `занято ${b.start.slice(0, 16).replace('T', ' ')} — ${b.end.slice(11, 16)}`).join('\n') || 'Всё свободно') },
+      { name: 'create_event', write: true, desc: 'Создать событие. start/end — ISO 8601 с часовым поясом (2026-11-27T10:00:00+03:00) или датой YYYY-MM-DD для события на весь день', params: obj({ summary: S, start: S, end: S, description: S, location: S, attendees: { type: 'array', items: S } }, ['summary', 'start', 'end']), run: (c, a, s) => http(`${CAL}/calendars/primary/events?sendUpdates=${a.attendees?.length ? 'all' : 'none'}`, { method: 'POST', ...G(c.token), body: { summary: a.summary, description: a.description, location: a.location, start: when(a.start), end: when(a.end), ...(a.attendees?.length ? { attendees: a.attendees.map((email) => ({ email })) } : {}) }, signal: s }).then((j) => `Создано: ${evLine(j)}\n${j.htmlLink || ''}`) },
+      { name: 'quick_add', write: true, desc: 'Создать событие из фразы («Обед с Анной завтра в 13:00»)', params: obj({ text: S }, ['text']), run: (c, a, s) => http(`${CAL}/calendars/primary/events/quickAdd?${qs({ text: a.text })}`, { method: 'POST', ...G(c.token), signal: s }).then((j) => `Создано: ${evLine(j)}`) },
+      { name: 'delete_event', write: true, desc: 'Удалить событие по id', params: obj({ id: S }, ['id']), run: (c, a, s) => http(`${CAL}/calendars/primary/events/${a.id}`, { method: 'DELETE', ...G(c.token), signal: s, raw: true }).then(() => 'Удалено') },
+    ] },
+);
+
 const byId = (id) => CONNECTORS.find((c) => c.id === id);
 export const getConnector = byId;
-export const connectedIds = (uid) => db.prepare('SELECT connector FROM integrations WHERE user_id=?').all(uid).map((r) => r.connector);
+export const connectedIds = (uid) => { const own = db.prepare("SELECT connector FROM integrations WHERE user_id=? AND connector!='google'").all(uid).map((r) => r.connector); return [...own, ...googleServices(uid)]; };
 const credsOf = (uid, id) => { const r = db.prepare('SELECT creds FROM integrations WHERE user_id=? AND connector=?').get(uid, id); try { return r ? JSON.parse(r.creds) : null; } catch { return null; } };
 
 /** Каталог для приложения: значения секретных полей не отдаются. */
 export function catalog(uid) {
-  const have = new Map(db.prepare('SELECT connector, creds FROM integrations WHERE user_id=?').all(uid).map((r) => [r.connector, r.creds]));
-  return CONNECTORS.map((c) => { let cr = {}; try { cr = JSON.parse(have.get(c.id) || '{}'); } catch {} return { id: c.id, name: c.name, icon: c.icon, desc: c.desc, connected: have.has(c.id), fields: c.fields.map((f) => ({ k: f.k, label: f.label, secret: !!f.secret, opt: !!f.opt, hint: f.hint || '', value: have.has(c.id) ? (f.secret ? (cr[f.k] ? '••••••' : '') : cr[f.k] || '') : '' })), actions: c.actions.map((a) => ({ name: a.name, desc: a.desc, write: !!a.write })) }; });
+  const have = new Map(db.prepare("SELECT connector, creds FROM integrations WHERE user_id=? AND connector!='google'").all(uid).map((r) => [r.connector, r.creds])); for (const g of googleServices(uid)) have.set(g, '{}');
+  return CONNECTORS.map((c) => { let cr = {}; try { cr = JSON.parse(have.get(c.id) || '{}'); } catch {} return { id: c.id, name: c.name, icon: c.icon, desc: c.desc, connected: have.has(c.id), oauth: c.oauth || '', oauthReady: c.oauth ? googleReady() : true, account: c.oauth ? googleEmail(uid) : '', fields: c.fields.map((f) => ({ k: f.k, label: f.label, secret: !!f.secret, opt: !!f.opt, hint: f.hint || '', value: have.has(c.id) ? (f.secret ? (cr[f.k] ? '••••••' : '') : cr[f.k] || '') : '' })), actions: c.actions.map((a) => ({ name: a.name, desc: a.desc, write: !!a.write })) }; });
 }
 export function saveCreds(uid, id, input) {
   const c = byId(id); if (!c) throw new Error('Неизвестный коннектор');
+  if (c.oauth) throw new Error('Этот коннектор подключается кнопкой «Войти через Google»');
   const old = credsOf(uid, id) || {}; const next = {};
   for (const f of c.fields) { const v = String(input?.[f.k] ?? '').trim(); next[f.k] = v === '••••••' || (!v && f.secret && old[f.k]) ? old[f.k] || '' : v; }
   const req = c.fields.filter((f) => !f.opt);
   for (const f of req) if (!next[f.k]) throw new Error(`Заполните поле «${f.label}»`);
   db.prepare('INSERT INTO integrations(user_id,connector,creds,created_at) VALUES (?,?,?,?) ON CONFLICT(user_id,connector) DO UPDATE SET creds=excluded.creds').run(uid, id, JSON.stringify(next), now());
 }
-export const removeCreds = (uid, id) => db.prepare('DELETE FROM integrations WHERE user_id=? AND connector=?').run(uid, id);
+export const removeCreds = (uid, id) => (byId(id)?.oauth ? googleRevoke(uid) : db.prepare('DELETE FROM integrations WHERE user_id=? AND connector=?').run(uid, id));
+/** Данные для действия: у OAuth-коннекторов — свежий access-токен. */
+const resolveCreds = async (uid, c) => (c.oauth ? (googleServices(uid).includes(c.id) ? { token: await googleAccess(uid) } : null) : credsOf(uid, c.id));
 
 /** Проверка подключения: первое безопасное (не write) действие без параметров, где возможно. */
 export async function testConnector(uid, id) {
-  const c = byId(id), cr = credsOf(uid, id); if (!c || !cr) return 'Не подключено';
+  const c = byId(id); const cr = c ? await resolveCreds(uid, c).catch((e) => { throw e; }) : null; if (!c || !cr) return 'Не подключено';
   const a = c.actions.find((x) => !x.write && !(x.params.required || []).length);
   if (!a) return 'Ключи сохранены (проверка недоступна для этого коннектора — попробуйте в чате)';
   try { const r = await a.run(cr, {}); return `Работает: ${trunc(String(r), 200)}`; } catch (e) { return `Ошибка: ${e.message}`; }
@@ -205,7 +245,8 @@ export async function runIntegration(user, name, args, ctx = {}) {
   const c = byId(m[1]); const a = c?.actions.find((x) => x.name === m[2]);
   if (!c || !a) return 'Ошибка: у коннектора нет такого действия';
   if (ctx.allow && !ctx.allow.has(c.id)) return `Ошибка: коннектор «${c.name}» не разрешён этому агенту`;
-  const cr = credsOf(user.id, c.id); if (!cr) return `Ошибка: коннектор «${c.name}» не подключён (Настройки → Коннекторы)`;
+  let cr; try { cr = await resolveCreds(user.id, c); } catch (e) { return `Ошибка ${c.name}: ${e.message}`; }
+  if (!cr) return `Ошибка: коннектор «${c.name}» не подключён (Настройки → Коннекторы)`;
   if (a.write) {
     if (ctx.automation && !ctx.writeOk) return `ОТКАЗАНО: у автономного агента нет разрешения на изменение данных в «${c.name}». Опиши в отчёте, что хотел сделать (${a.desc}), — пользователь решит сам или включит агенту «Разрешить действия».`;
     if (!ctx.automation && ctx.autonomy !== 'auto' && args.confirmed !== true) return `ОТКАЗАНО (режим «спрашивать»): «${c.name}: ${a.desc}» изменяет данные или что-то отправляет. Вызови ask_user с вопросом и вариантами «Да» / «Нет», покажи, что именно будет сделано. Повтори вызов с confirmed=true только после явного «Да».`;

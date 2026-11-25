@@ -410,6 +410,7 @@ api.delete('/schedules/:id', (req, res) => res.json({ ok: deleteSchedule(req.use
 // ---------- агенты и коннекторы ----------
 import { listAgents, saveAgent, deleteAgent, getAgent, publicAgent, runAgentNow, TEMPLATES, ensureMain } from './agents.js';
 import { catalog as connCatalog, saveCreds, removeCreds, testConnector } from './integrations.js';
+import { googleStartUrl } from './googleOAuth.js';
 api.get('/agents', (req, res) => res.json({ agents: listAgents(req.user.id).map(publicAgent), templates: TEMPLATES, connectors: connCatalog(req.user.id).map((c) => ({ id: c.id, name: c.name, icon: c.icon, connected: c.connected })) }));
 api.post('/agents', (req, res) => { try { res.json(publicAgent(saveAgent(req.user.id, req.body || {}))); } catch (e) { res.status(400).json({ error: e.message }); } });
 api.patch('/agents/:id', (req, res) => { try { res.json(publicAgent(saveAgent(req.user.id, req.body || {}, +req.params.id))); } catch (e) { res.status(e.message === 'Агент не найден' ? 404 : 400).json({ error: e.message }); } });
@@ -424,9 +425,10 @@ api.post('/agents/:id/chat', (req, res) => {          // обычный чат �
   const id = db.prepare('INSERT INTO conversations(user_id,title,mode,created_at,updated_at,agent_id) VALUES (?,?,?,?,?,?)').run(req.user.id, `${a.emoji} ${a.name}`, 'chat', t, t, a.id).lastInsertRowid;
   res.json({ id: Number(id), title: `${a.emoji} ${a.name}`, mode: 'chat', updatedAt: t, running: false });
 });
+api.post('/oauth/google/start', (req, res) => { try { res.json({ url: googleStartUrl(req.user.id, req.body?.services) }); } catch (e) { res.status(400).json({ error: e.message }); } });
 api.get('/integrations', (req, res) => res.json(connCatalog(req.user.id)));
 api.put('/integrations/:id', (req, res) => { try { saveCreds(req.user.id, req.params.id, req.body?.fields || {}); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); } });
-api.delete('/integrations/:id', (req, res) => { removeCreds(req.user.id, req.params.id); res.json({ ok: true }); });
+api.delete('/integrations/:id', async (req, res) => { await removeCreds(req.user.id, req.params.id); res.json({ ok: true }); });
 api.post('/integrations/:id/test', async (req, res) => res.json({ result: await testConnector(req.user.id, req.params.id) }));
 
 // ---------- навыки ----------

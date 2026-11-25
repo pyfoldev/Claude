@@ -7,6 +7,7 @@ import { authRouter } from './auth.js';
 import { api } from './routes.js';
 import { startScheduler } from './scheduler.js';
 import { startAgentScheduler } from './agents.js';
+import { googleCallback } from './googleOAuth.js';
 import { mountSites } from './sites.js';
 import { mountShare } from './extras.js';
 import { attachWs } from './sttStream.js';
@@ -57,6 +58,7 @@ app.post('/hooks/:token', express.text({ type: '*/*', limit: '200kb' }), async (
   res.json({ ok: true });
 });
 app.use('/auth', authRouter);
+app.get('/oauth/google/callback', googleCallback);
 app.use('/api', api);
 app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: err.message }); });
 

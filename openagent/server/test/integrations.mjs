@@ -2,7 +2,7 @@
 import { CONNECTORS } from '../src/integrations.js';
 const calls = [];
 globalThis.fetch = async (url, o = {}) => { calls.push({ url: String(url), method: o.method || 'GET', h: o.headers || {}, body: o.body }); return new Response(JSON.stringify({ ok: true, results: [], items: [], data: [], records: [], issues: [], messages: [], channels: [], result: [], projects: [], deployments: [] }), { status: 200, headers: { 'content-type': 'application/json' } }); };
-const sample = (p) => { const o = {}; for (const [k, v] of Object.entries(p.properties || {})) o[k] = v.type === 'integer' ? 2 : v.type === 'object' ? { a: 1 } : v.type === 'boolean' ? true : 'x'; return o; };
+const sample = (p) => { const o = {}; for (const [k, v] of Object.entries(p.properties || {})) o[k] = v.enum ? v.enum[0] : v.type === 'array' ? ['x@y.z'] : v.type === 'integer' ? 2 : v.type === 'object' ? { a: 1 } : v.type === 'boolean' ? true : 'x'; return o; };
 let bad = 0;
 for (const c of CONNECTORS) {
   const cr = Object.fromEntries(c.fields.map((f) => [f.k, f.k === 'url' ? 'https://example.test/cal.ics' : f.k === 'domain' ? 'acme.atlassian.net' : f.k === 'webhook_url' ? 'https://discord.test/api/webhooks/1/x' : 'SECRET_' + f.k]));

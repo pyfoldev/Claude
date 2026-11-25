@@ -141,14 +141,32 @@ fun ConnectorsScreen(vm: AppVM) {
             item { Panel(onClick = { vm.screen = Screen.Connections }) { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Extension, null, tint = C.onContainer); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("Ещё тысячи сервисов", color = C.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold); Text("Через MCP: Zapier, Context7, Supabase, Hugging Face и свои серверы", color = C.dim, fontSize = 13.sp) }; Icon(Icons.Outlined.ChevronRight, null, tint = C.dim) } } }
         }
     }
-    open?.let { c ->
-        val vals = remember(c.id) { mutableStateMapOf<String, String>().also { m -> c.fields.forEach { m[it.k] = it.value } } }
-        AppDialog("${c.icon} ${c.name}", { open = null }, "Сохранить и проверить", c.fields.filter { !it.opt }.all { !vals[it.k].isNullOrBlank() }, { vm.saveConnector(c, vals.toMap(), true); open = null }) {
-            Text(c.desc, color = C.dim, fontSize = 13.sp)
-            c.fields.forEach { f -> Field(vals[f.k] ?: "", { vals[f.k] = it }, f.label + if (f.opt) " (необязательно)" else "", mono = f.secret); if (f.hint.isNotBlank()) Text(f.hint, color = C.dim, fontSize = 12.sp) }
-            Text("Что умеет: " + c.actions.joinToString("; ") { it.desc + if (it.write) " ✎" else "" }, color = C.dim, fontSize = 12.sp, lineHeight = 17.sp)
-            Text("✎ — действия, меняющие данные: в чате спрашивают подтверждение, у автономного агента — только при включённом «Разрешить действия».", color = C.dim, fontSize = 12.sp, lineHeight = 17.sp)
-            if (c.connected) SoftChip(Icons.Outlined.LinkOff, "Отключить", false) { vm.removeConnector(c); open = null }
+    // после возврата из браузера (вход в Google) обновляем список
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(owner) { val ob = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) vm.loadConnectors() }; owner.lifecycle.addObserver(ob); onDispose { owner.lifecycle.removeObserver(ob) } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    open?.let { c0 ->
+        val c = vm.connectors.firstOrNull { it.id == c0.id } ?: c0
+        if (c.oauth.isNotEmpty()) {
+            AppDialog("${c.icon} ${c.name}", { open = null }, if (c.connected) "Войти заново" else "Войти через Google", c.oauthReady, {
+                vm.googleSignIn { url -> runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) } }; open = null
+            }) {
+                Text(c.desc, color = C.dim, fontSize = 13.sp)
+                if (!c.oauthReady) Text("На сервере не настроен вход через Google. Администратору: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET и PUBLIC_URL в .env (см. README).", color = C.dim, fontSize = 12.sp, lineHeight = 17.sp)
+                else Text(if (c.connected) "Подключено${if (c.account.isNotBlank()) ": ${c.account}" else ""}. Один вход даёт доступ и к Gmail, и к Календарю." else "Откроется страница Google: выберите аккаунт и разрешите доступ. Gmail и Календарь подключаются одним входом.", color = C.dim, fontSize = 13.sp, lineHeight = 18.sp)
+                Text("Что умеет: " + c.actions.joinToString("; ") { it.desc + if (it.write) " ✎" else "" }, color = C.dim, fontSize = 12.sp, lineHeight = 17.sp)
+                Text("✎ — действия, меняющие данные: в чате спрашивают подтверждение, у автономного агента — только при включённом «Разрешить действия».", color = C.dim, fontSize = 12.sp, lineHeight = 17.sp)
+                if (c.connected) SoftChip(Icons.Outlined.LinkOff, "Отключить Google", false) { vm.removeConnector(c); open = null }
+            }
+        } else {
+            val vals = remember(c.id) { mutableStateMapOf<String, String>().also { m -> c.fields.forEach { m[it.k] = it.value } } }
+            AppDialog("${c.icon} ${c.name}", { open = null }, "Сохранить и проверить", c.fields.filter { !it.opt }.all { !vals[it.k].isNullOrBlank() }, { vm.saveConnector(c, vals.toMap(), true); open = null }) {
+                Text(c.desc, color = C.dim, fontSize = 13.sp)
+                c.fields.forEach { f -> Field(vals[f.k] ?: "", { vals[f.k] = it }, f.label + if (f.opt) " (необязательно)" else "", mono = f.secret); if (f.hint.isNotBlank()) Text(f.hint, color = C.dim, fontSize = 12.sp) }
+                Text("Что умеет: " + c.actions.joinToString("; ") { it.desc + if (it.write) " ✎" else "" }, color = C.dim, fontSize = 12.sp, lineHeight = 17.sp)
+                Text("✎ — действия, меняющие данные: в чате спрашивают подтверждение, у автономного агента — только при включённом «Разрешить действия».", color = C.dim, fontSize = 12.sp, lineHeight = 17.sp)
+                if (c.connected) SoftChip(Icons.Outlined.LinkOff, "Отключить", false) { vm.removeConnector(c); open = null }
+            }
         }
     }
 }

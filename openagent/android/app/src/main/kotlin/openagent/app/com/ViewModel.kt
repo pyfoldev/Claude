@@ -1237,6 +1237,7 @@ class AppVM(app: Application) : AndroidViewModel(app) {
         loadConnectors().join()
         if (test) runCatching { api.testIntegration(c.id) }.onSuccess { toast = it.result.take(200) }.onFailure(::err) else toast = "Сохранено"
     }
+    fun googleSignIn(onUrl: (String) -> Unit) = viewModelScope.launch { runCatching { api.googleStart() }.onSuccess { onUrl(it.url) }.onFailure(::err) }
     fun removeConnector(c: Connector) = viewModelScope.launch { runCatching { api.removeIntegration(c.id) }.onFailure(::err); loadConnectors().join() }
     val missions = mutableStateListOf<MissionItem>()
     fun loadMissions() = viewModelScope.launch { runCatching { api.missions() }.onSuccess { missions.clear(); missions.addAll(it) }.onFailure(::err) }
