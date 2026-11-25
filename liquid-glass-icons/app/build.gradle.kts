@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "app.glassicons"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "app.glassicons"
