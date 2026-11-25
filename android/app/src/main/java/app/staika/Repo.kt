@@ -48,8 +48,9 @@ object Repo {
     fun agent(id: String?) = agents.firstOrNull { it.id == id }
     fun chief() = agents.firstOrNull { it.chief }
 
-    /** Закреплённые сверху: главный и два последних по активности. */
+    /** Быстрый ряд сверху: главный и два последних по активности. Только когда агентов больше трёх, иначе все в списке чатов. */
     fun pinned(): List<Agent> {
+        if (agents.size <= 3) return emptyList()
         val sorted = agents.sortedByDescending { it.lastAt }
         val c = chief()
         return (listOfNotNull(c) + sorted.filter { it != c }.take(if (c != null) 2 else 3))

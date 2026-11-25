@@ -108,7 +108,7 @@ fun HomeScreen(onChat: (String) -> Unit, onProfile: () -> Unit, onCreate: () -> 
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Avatar(a.pal, 62.dp, status = a.status)
+                    Avatar(a.pal, 62.dp, chief = a.chief, status = a.status)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -29,6 +29,7 @@ class ScreenshotTest {
 
     @Test fun welcome() = shot("01_welcome") { WelcomeScreen({}, {}) }
     @Test fun home() = shot("02_home") { HomeScreen({}, {}, {}, {}) }
+    @Test fun homeTwo() { Repo.agents.removeAll { it.id !in setOf("chief", "ea") }; shot("02c_home_two") { HomeScreen({}, {}, {}, {}) } }
     @Test fun homeEmpty() { Repo.agents.clear(); shot("02b_home_empty") { HomeScreen({}, {}, {}, {}) } }
     @Test fun chatDev() = shot("03_chat_dev") { ChatScreen("dev", {}, {}, {}) }
     @Test fun chatChief() = shot("04_chat_chief") { ChatScreen("chief", {}, {}, {}) }
