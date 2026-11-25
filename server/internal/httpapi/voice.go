@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -24,6 +25,14 @@ const (
 )
 
 var langRe = regexp.MustCompile(`^[a-zA-Z-]{2,8}$`)
+
+func logDialFail(what string, err error, resp *http.Response) {
+	status := 0
+	if resp != nil {
+		status = resp.StatusCode
+	}
+	log.Printf("voice: %s upstream dial failed: %v (HTTP %d)", what, err, status)
+}
 
 // deepgramKey: свой ключ пользователя, иначе серверный только для owner/family (иначе чужие минуты оплачивает владелец).
 func (s *Server) deepgramKey(p *core.Principal) (*store.User, string) {
@@ -89,6 +98,7 @@ func (s *Server) dictationSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	_, key := s.deepgramKey(p)
 	if key == "" {
+		log.Printf("voice: dictation denied for user %s: no Deepgram key (set DEEPGRAM_API_KEY or add own key)", p.UserID)
 		c.Close(websocket.StatusPolicyViolation, "voice_not_available")
 		return
 	}
@@ -100,8 +110,9 @@ func (s *Server) dictationSocket(w http.ResponseWriter, r *http.Request) {
 		"interim_results": {"true"}, "smart_format": {"true"}, "punctuate": {"true"}, "endpointing": {"400"}}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
 	defer cancel()
-	up, _, err := websocket.Dial(ctx, deepgramListen+"?"+q.Encode(), &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Token " + key}}})
+	up, resp, err := websocket.Dial(ctx, deepgramListen+"?"+q.Encode(), &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Token " + key}}})
 	if err != nil {
+		logDialFail("dictation", err, resp)
 		c.Close(websocket.StatusInternalError, "upstream_unavailable")
 		return
 	}
@@ -117,6 +128,7 @@ func (s *Server) callSocket(w http.ResponseWriter, r *http.Request) {
 	user, key := s.deepgramKey(p)
 	ag, _ := s.St.AgentByID(r.URL.Query().Get("agentId"))
 	if key == "" || user == nil {
+		log.Printf("voice: call denied for user %s: no Deepgram key (set DEEPGRAM_API_KEY or add own key)", p.UserID)
 		c.Close(websocket.StatusPolicyViolation, "voice_not_available")
 		return
 	}
@@ -134,8 +146,9 @@ func (s *Server) callSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Minute)
 	defer cancel()
-	up, _, err := websocket.Dial(ctx, deepgramAgent, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Token " + key}}})
+	up, resp, err := websocket.Dial(ctx, deepgramAgent, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Token " + key}}})
 	if err != nil {
+		logDialFail("call", err, resp)
 		c.Close(websocket.StatusInternalError, "upstream_unavailable")
 		return
 	}

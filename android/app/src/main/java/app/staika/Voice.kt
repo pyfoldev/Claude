@@ -83,6 +83,14 @@ private fun voiceError(reason: String?): String = when (reason) {
     else -> "Соединение прервано"
 }
 
+/** Текст ошибки при обрыве соединения: если сервер ответил HTTP-кодом, показываем его, а не «нет связи». */
+private fun failureText(r: Response?): String = when (r?.code) {
+    null -> "Нет связи с сервером"
+    401 -> "Сессия истекла, войдите заново"
+    404 -> "Сервер не поддерживает голос: обновите сервер"
+    else -> "Сервер отклонил соединение (${r.code})"
+}
+
 /** Диктовка: поток с микрофона через сервер в Deepgram Nova-3, текст приходит по мере речи. */
 class Dictation(private val onText: (String) -> Unit, private val onEnd: (error: String?) -> Unit) {
     private var ws: WebSocket? = null
@@ -113,11 +121,16 @@ class Dictation(private val onText: (String) -> Unit, private val onEnd: (error:
                         onText((committed + " " + interim).trim())
                     }
                 }
+                // Сервер закрывает соединение с кодом и причиной (например, нет ключа Deepgram). Без onClosing эта причина терялась.
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(1000, null)
+                    Repo.scope.launch { finish(if (code == 1000 || code == 1005) null else voiceError(reason)) }
+                }
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     Repo.scope.launch { finish(if (code == 1000 || code == 1005) null else voiceError(reason)) }
                 }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    Repo.scope.launch { finish("Нет связи с сервером") }
+                    Repo.scope.launch { finish(failureText(response)) }
                 }
             })
         }
@@ -185,10 +198,14 @@ class CallSession(private val ctx: Context, private val agentId: String) {
                         }
                     }
                 }
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(1000, null)
+                    Repo.scope.launch { if (state != State.Ended) { if (code != 1000 && code != 1005) fail(voiceError(reason)) else end() } }
+                }
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     Repo.scope.launch { if (state != State.Ended) { if (code != 1000 && code != 1005) fail(voiceError(reason)) else end() } }
                 }
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { Repo.scope.launch { fail("Нет связи с сервером") } }
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { Repo.scope.launch { fail(failureText(response)) } }
             })
         }
     }
