@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,53 +29,58 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private fun seed(a: Agent): List<Msg> = when (a.id) {
-    "chief" -> listOf(
-        Msg.Day("Сегодня 8:00"),
-        Msg.Text("Привет! Что требует моего внимания сегодня?", true),
-        Msg.Text("За ночь: 41 письмо, 6 требовали вас, остальные разобраны.", false),
-        Msg.Text("3 счёта ушли Аналитику, 2 знакомства связал, 1 баг передал Разработчику.", false),
-        Msg.Approval(1, "Совет директоров в 14:00", "Календарь: создать событие «Разбор презентации», 14:00–15:00, пригласить 4 человек.", "Внешнее действие"),
-        Msg.Doc("Презентация Q3, версия 4", "docs.google.com"),
-        Msg.Task("Подготовить отчёт для совета", 0.7f, "В работе"),
-    )
-    "mail" -> listOf(
-        Msg.Day("Сегодня 8:22"),
-        Msg.Text("Разобрал 41 письмо. Три ответа готовы к отправке.", false),
-        Msg.Approval(2, "Отправить письмо клиенту", "Кому: anna@example.com\nТема: Re: Счёт на оплату\nОтправка с адреса почтальон@ваш-домен", "Отправка письма"),
-        Msg.Doc("Черновики ответов", "docs.google.com"),
-    )
-    "dev" -> listOf(
-        Msg.Day("Сегодня 8:05"),
-        Msg.Text("Собираю релиз 0.4.2. Тесты прошли, осталась выкатка.", false),
-        Msg.Approval(3, "Деплой на сервер", "docker compose up -d api\nПроект: staika-api, версия 0.4.2", "Системное действие"),
-        Msg.Task("Выкатить релиз 0.4.2", 0.45f, "В работе"),
-    )
-    else -> listOf(Msg.Day("Сегодня"), Msg.Text(a.last, false))
-}
-
 @Composable
-fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComputer: () -> Unit) {
-    val agent = Store.agent(agentId)
-    val msgs: SnapshotStateList<Msg> = remember(agentId) { mutableStateListOf<Msg>().also { it.addAll(seed(agent)) } }
-    val scope = rememberCoroutineScope()
+fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onSettings: () -> Unit) {
+    val agent = Repo.agent(agentId)
+    if (agent == null) { Box(Modifier.fillMaxSize().background(Color.White)); return }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     var recording by remember { mutableStateOf(false) }
     var attach by remember { mutableStateOf(false) }
+    var dictation by remember { mutableStateOf<Dictation?>(null) }
+    var baseText by remember { mutableStateOf("") }
 
-    LaunchedEffect(msgs.size) { if (msgs.isNotEmpty()) listState.animateScrollToItem(msgs.lastIndex) }
+    LaunchedEffect(agentId) { Repo.loadMessages(agentId) }
+    DisposableEffect(agentId) { onDispose { dictation?.stop() } }
+
+    // сообщения с разделителями по дням и индикатором «печатает»
+    val raw = Repo.messages[agentId]
+    val items: List<Msg> = remember(raw?.toList(), agent.status) {
+        buildList {
+            var lastDay = ""
+            raw?.forEach { m ->
+                val d = dayLabel(m.at)
+                if (d != lastDay) { add(Msg.Day("day-${m.at}", m.at, d + ", " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru")).format(java.util.Date(m.at)))); lastDay = d }
+                add(m)
+            }
+            if (agent.status == Status.Working) add(Msg.Typing)
+        }
+    }
+    LaunchedEffect(items.size) { if (items.isNotEmpty()) listState.animateScrollToItem(items.lastIndex) }
 
     fun send() {
         val t = input.trim()
         if (t.isEmpty()) return
         input = ""
-        msgs.add(Msg.Text(t, true))
-        scope.launch {
-            delay(450); msgs.add(Msg.Typing)
-            delay(1500); msgs.remove(Msg.Typing)
-            msgs.add(Msg.Text("Принял. Берусь за это и вернусь с результатом.", false))
-        }
+        Repo.send(agentId, t)
+    }
+
+    fun startDictation() {
+        baseText = input
+        val d = Dictation(
+            onText = { t -> input = (baseText + " " + t).trim() },
+            onEnd = { err -> recording = false; err?.let { Repo.say(it) } },
+        )
+        dictation = d; recording = true; d.start()
+    }
+    val permission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) startDictation() else Repo.say("Нужен доступ к микрофону")
+    }
+    fun toggleMic() {
+        if (recording) { dictation?.stop(); return }
+        if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startDictation()
+        else permission.launch(android.Manifest.permission.RECORD_AUDIO)
     }
 
     Column(Modifier.fillMaxSize().background(Color.White).imePadding()) {
@@ -88,7 +92,8 @@ fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComput
             Spacer(Modifier.width(10.dp))
             Row(
                 Modifier.shadow(4.dp, CircleShape, ambientColor = C.Shadow, spotColor = C.Shadow).clip(CircleShape).background(Color.White)
-                    .border(1.dp, C.Line, CircleShape).padding(start = 7.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
+                    .border(1.dp, C.Line, CircleShape).bounceClick(down = 0.97f, onClick = onSettings)
+                    .padding(start = 7.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Avatar(agent.pal, 36.dp, status = agent.status)
@@ -99,7 +104,6 @@ fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComput
                 }
             }
             Spacer(Modifier.weight(1f))
-            if (agent.id == "dev" || agent.id == "ops") { IconPill(Icons.Outlined.Computer, onComputer); Spacer(Modifier.width(8.dp)) }
             IconPill(Icons.Outlined.Call, onCall)
         }
 
@@ -108,14 +112,15 @@ fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComput
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            itemsIndexed(msgs) { i, m ->
+            itemsIndexed(items, key = { _, m -> m.id }) { _, m ->
                 Box(Modifier.animateItem().appear(0, 14.dp)) {
                     when (m) {
                         is Msg.Day -> Text(m.label, color = C.Muted, fontSize = 14.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = TextAlign.Center)
                         is Msg.Text -> Bubble(m.mine) { Text(m.text, color = if (m.mine) Color.White else C.Ink, fontSize = 17.sp, lineHeight = 23.sp) }
+                        is Msg.System -> Text(m.text, color = C.Muted, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), textAlign = TextAlign.Center)
                         is Msg.Doc -> DocCard(m)
                         is Msg.Task -> TaskCard(m)
-                        is Msg.Approval -> ApprovalCard(m) { d -> msgs[i] = m.copy(decision = d) }
+                        is Msg.Approval -> ApprovalCard(m) { d, always -> Repo.decide(agentId, m, d == Decision.Allowed, always) }
                         Msg.Typing -> TypingBubble()
                     }
                 }
@@ -129,9 +134,7 @@ fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComput
             Box {
                 IconPill(Icons.Outlined.Add, { attach = true }, size = 50.dp)
                 DropdownMenu(attach, { attach = false }, containerColor = Color.White, shape = RoundedCornerShape(22.dp)) {
-                    DropdownMenuItem({ Text("Фото") }, { attach = false }, leadingIcon = { Icon(Icons.Outlined.Image, null) })
-                    DropdownMenuItem({ Text("Файл") }, { attach = false }, leadingIcon = { Icon(Icons.Outlined.AttachFile, null) })
-                    DropdownMenuItem({ Text("Камера") }, { attach = false }, leadingIcon = { Icon(Icons.Outlined.PhotoCamera, null) })
+                    DropdownMenuItem({ Text("Фото и файлы скоро") }, { attach = false }, enabled = false, leadingIcon = { Icon(Icons.Outlined.AttachFile, null) })
                 }
             }
             Spacer(Modifier.width(10.dp))
@@ -142,32 +145,29 @@ fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComput
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.weight(1f).padding(vertical = 11.dp).animateContentSize()) {
-                    if (recording) DictationWave() else {
-                        if (input.isEmpty()) Text("Напишите: ${agent.name}", color = C.Muted, fontSize = 17.sp)
-                        BasicTextField(
-                            input, { input = it }, Modifier.fillMaxWidth(), maxLines = 5,
-                            textStyle = TextStyle(fontFamily = Inter, fontSize = 17.sp, color = C.Ink),
-                            cursorBrush = SolidColor(C.Ink),
-                        )
-                    }
+                    if (input.isEmpty() && !recording) Text("Напишите: ${agent.name}", color = C.Muted, fontSize = 17.sp)
+                    if (recording && input.isEmpty()) DictationWave()
+                    BasicTextField(
+                        input, { input = it }, Modifier.fillMaxWidth(), maxLines = 5,
+                        textStyle = TextStyle(fontFamily = Inter, fontSize = 17.sp, color = C.Ink),
+                        cursorBrush = SolidColor(C.Ink),
+                    )
                 }
                 val showSend = input.isNotBlank() && !recording
                 val dark = showSend || recording
                 val bg by animateColorAsState(if (dark) C.Ink else Color(0xFFEDEDF0), tween(220), label = "micBg")
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(bg).bounceClick(down = 0.88f) {
-                        if (showSend) send() else if (recording) { recording = false; input = "Подготовь отчёт по расходам за неделю" } else recording = true
-                    },
+                    Modifier.size(40.dp).clip(CircleShape).background(bg).bounceClick(down = 0.88f) { if (showSend) send() else toggleMic() },
                     Alignment.Center,
                 ) {
                     AnimatedContent(
                         if (showSend) 1 else if (recording) 2 else 0,
                         transitionSpec = { (scaleIn(spring(0.6f, 500f)) + fadeIn(tween(120))) togetherWith (scaleOut(tween(120)) + fadeOut(tween(100))) },
                         label = "micIcon",
-                    ) { s ->
+                    ) { st ->
                         Icon(
-                            when (s) { 1 -> Icons.Outlined.ArrowUpward; 2 -> Icons.Outlined.Stop; else -> Icons.Outlined.Mic },
-                            null, tint = if (s == 0) C.Muted else Color.White, modifier = Modifier.size(23.dp),
+                            when (st) { 1 -> Icons.Outlined.ArrowUpward; 2 -> Icons.Outlined.Stop; else -> Icons.Outlined.Mic },
+                            null, tint = if (st == 0) C.Muted else Color.White, modifier = Modifier.size(23.dp),
                         )
                     }
                 }
@@ -237,7 +237,7 @@ private fun TaskCard(t: Msg.Task) {
 }
 
 @Composable
-private fun ApprovalCard(a: Msg.Approval, onDecide: (Decision) -> Unit) {
+private fun ApprovalCard(a: Msg.Approval, onDecide: (Decision, Boolean) -> Unit) {
     val border by animateColorAsState(if (a.decision == Decision.Pending) C.Warn else C.Line, tween(400), label = "ab")
     Column(
         Modifier.fillMaxWidth().animateContentSize(spring(0.8f, 400f)).clip(RoundedCornerShape(24.dp)).background(Color.White)
@@ -263,15 +263,15 @@ private fun ApprovalCard(a: Msg.Approval, onDecide: (Decision) -> Unit) {
         when (a.decision) {
             Decision.Pending -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.weight(1f).height(48.dp).bounceClick { onDecide(Decision.Denied) }.clip(CircleShape).background(C.Bubble), Alignment.Center) {
+                    Box(Modifier.weight(1f).height(48.dp).bounceClick { onDecide(Decision.Denied, false) }.clip(CircleShape).background(C.Bubble), Alignment.Center) {
                         Text("Отклонить", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                     }
-                    Box(Modifier.weight(1f).height(48.dp).bounceClick { onDecide(Decision.Allowed) }.clip(CircleShape).background(C.Ink), Alignment.Center) {
+                    Box(Modifier.weight(1f).height(48.dp).bounceClick { onDecide(Decision.Allowed, false) }.clip(CircleShape).background(C.Ink), Alignment.Center) {
                         Text("Разрешить", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                     }
                 }
                 Text("Разрешать всегда для этого агента", color = C.Muted, fontSize = 14.sp,
-                    modifier = Modifier.align(Alignment.CenterHorizontally).bounceClick { onDecide(Decision.Allowed) }.padding(top = 10.dp, bottom = 2.dp))
+                    modifier = Modifier.align(Alignment.CenterHorizontally).bounceClick { onDecide(Decision.Allowed, a.risk != "Необратимое действие") }.padding(top = 10.dp, bottom = 2.dp))
             }
             Decision.Allowed -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.CheckCircle, null, tint = C.Ok, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(8.dp))
@@ -286,10 +286,10 @@ private fun ApprovalCard(a: Msg.Approval, onDecide: (Decision) -> Unit) {
 }
 
 @Composable
-fun DictationWave(modifier: Modifier = Modifier, color: Color = C.Ink) {
+fun DictationWave(modifier: Modifier = Modifier, color: Color = C.Ink, label: String = "Слушаю") {
     val t = rememberInfiniteTransition(label = "w")
     Row(modifier.height(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text("Слушаю", color = C.Muted, fontSize = 17.sp); Spacer(Modifier.width(6.dp))
+        Text(label, color = C.Muted, fontSize = 17.sp); Spacer(Modifier.width(6.dp))
         repeat(20) { i ->
             val h by t.animateFloat(4f, 22f, infiniteRepeatable(tween(420 + (i * 53) % 300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "b$i")
             Box(Modifier.width(3.dp).height(h.dp).clip(CircleShape).background(color))

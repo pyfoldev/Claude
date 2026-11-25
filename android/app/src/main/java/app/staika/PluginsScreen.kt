@@ -25,30 +25,18 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun PluginsScreen(onBack: () -> Unit) {
     var q by remember { mutableStateOf("") }
-    val added = remember { mutableStateMapOf<String, Boolean>().also { m -> Store.plugins.forEach { m[it.name] = it.added } } }
-    val shown = Store.plugins.filter { q.isBlank() || it.name.contains(q, true) || it.desc.contains(q, true) }
+    val shown = toolCatalog.filter { q.isBlank() || it.name.contains(q, true) || it.desc.contains(q, true) }
     val flat = buildList<Any> { shown.groupBy { it.group }.forEach { (g, l) -> add(g); addAll(l) } }
 
     Column(Modifier.fillMaxSize().background(Color.White)) {
         ScreenTop("Плагины", onBack)
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                PillField(q, { q = it }, "Поиск плагинов", trailing = { Icon(Icons.Outlined.Search, null, tint = C.Muted, modifier = Modifier.padding(end = 8.dp)) })
-            }
-            Spacer(Modifier.width(10.dp))
-            IconPill(Icons.Outlined.Tune, { }, size = 54.dp)
-        }
+        PillField(q, { q = it }, "Поиск", Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            trailing = { Icon(Icons.Outlined.Search, null, tint = C.Muted, modifier = Modifier.padding(end = 8.dp)) })
         LazyColumn(contentPadding = PaddingValues(bottom = 28.dp)) {
-            itemsIndexed(flat, key = { _, it -> if (it is Plugin) it.name else it.toString() }) { i, item ->
+            itemsIndexed(flat, key = { _, it -> if (it is ToolInfo) it.name else it.toString() }) { i, item ->
                 if (item is String) {
-                    Row(Modifier.appear(i).padding(horizontal = 20.dp, vertical = 12.dp)) {
-                        Text(item, color = C.Muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                        Text("Все", color = C.Muted, fontSize = 15.sp)
-                    }
-                } else if (item is Plugin) {
-                    val on = added[item.name] == true
-                    val bg by animateColorAsState(if (on) C.Ok.copy(alpha = 0.12f) else C.Bubble, tween(240), label = "pluginBg")
-                    val fg by animateColorAsState(if (on) C.Ok else C.Ink, tween(240), label = "pluginFg")
+                    Text(item, color = C.Muted, fontSize = 15.sp, modifier = Modifier.appear(i).padding(horizontal = 20.dp, vertical = 12.dp))
+                } else if (item is ToolInfo) {
                     Row(Modifier.fillMaxWidth().appear(i).padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                         BrandTile(item)
                         Spacer(Modifier.width(14.dp))
@@ -58,11 +46,11 @@ fun PluginsScreen(onBack: () -> Unit) {
                         }
                         Spacer(Modifier.width(10.dp))
                         Row(
-                            Modifier.bounceClick { added[item.name] = !on }.clip(CircleShape).background(bg).padding(horizontal = 15.dp, vertical = 9.dp),
+                            Modifier.clip(CircleShape).background(if (item.ready) C.Ok.copy(alpha = 0.12f) else C.Bubble).padding(horizontal = 15.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (on) { Icon(Icons.Outlined.Check, null, tint = fg, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(4.dp)) }
-                            Text(if (on) "Добавлено" else "Добавить", color = fg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            if (item.ready) { Icon(Icons.Outlined.Check, null, tint = C.Ok, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(4.dp)) }
+                            Text(if (item.ready) "Включено" else "Скоро", color = if (item.ready) C.Ok else C.Muted, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -73,7 +61,7 @@ fun PluginsScreen(onBack: () -> Unit) {
 
 /** Узнаваемые значки основных сервисов, остальные: цветная буква. */
 @Composable
-private fun BrandTile(p: Plugin) {
+private fun BrandTile(p: ToolInfo) {
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(15.dp)
     Box(Modifier.size(50.dp).clip(shape).background(Color.White).border(1.dp, C.Line, shape), Alignment.Center) {
         when (p.name) {
@@ -102,7 +90,7 @@ private fun BrandTile(p: Plugin) {
             "Telegram" -> Box(Modifier.size(30.dp).clip(CircleShape).background(Color(0xFF229ED9)), Alignment.Center) {
                 Icon(Icons.Outlined.Send, null, tint = Color.White, modifier = Modifier.size(16.dp))
             }
-            else -> Text(p.glyph, color = Color(p.color), fontWeight = FontWeight.Bold, fontSize = 19.sp)
+            else -> Text(p.glyph, color = Color(p.color), fontWeight = FontWeight.Bold, fontSize = 20.sp)
         }
     }
 }

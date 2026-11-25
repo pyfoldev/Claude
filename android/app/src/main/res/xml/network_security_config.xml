@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Разрешён http для проверки сервера по IP. В продакшене используйте https: приложение предупреждает, если адрес без TLS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

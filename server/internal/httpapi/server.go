@@ -111,6 +111,13 @@ func (s *Server) ownAgent(p *core.Principal, id string) (*store.Agent, error) {
 func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { s.writeJSON(w, 200, map[string]string{"status": "ok"}) })
+	m.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		gid := ""
+		if len(s.Cfg.GoogleClientIDs) > 0 {
+			gid = s.Cfg.GoogleClientIDs[0]
+		}
+		s.writeJSON(w, 200, map[string]any{"googleClientId": gid, "registrationOpen": s.Cfg.RegistrationOpen, "version": "0.1.0"})
+	})
 	s.authRoutes(m)
 	s.apiRoutes(m)
 	s.wsRoutes(m)

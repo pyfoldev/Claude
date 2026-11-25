@@ -25,28 +25,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
-private val models = listOf("Claude Sonnet 5.5", "Claude Haiku 4.5", "GPT-5.5", "Gemini 3.5 Flash", "DeepSeek V4.1 Flash", "Kimi K3", "GLM-5.3")
+private val fallbackModels = listOf(ModelOpt("Claude Haiku 4.5", "Claude Haiku 4.5", "anthropic"), ModelOpt("Claude Sonnet 5.5", "Claude Sonnet 5.5", "anthropic"))
 
-/** Как в референсе: аватар, имя, сетка внешности и чёрная кнопка. Остальное спрятано в «Дополнительно». */
+/** Создание и редактирование агента: аватар, имя, роль, внешность. Остальное спрятано в «Дополнительно». */
 @Composable
-fun CreateAgentScreen(onClose: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var role by remember { mutableStateOf("") }
-    var pal by remember { mutableStateOf(Pal.Blue) }
+fun CreateAgentScreen(editId: String?, onClose: () -> Unit) {
+    val editing = editId?.let { Repo.agent(it) }
+    var name by remember { mutableStateOf(editing?.name ?: "") }
+    var role by remember { mutableStateOf(editing?.role ?: "") }
+    var pal by remember { mutableStateOf(editing?.pal ?: Pal.Blue) }
     var more by remember { mutableStateOf(false) }
-    var model by remember { mutableStateOf(models[1]) }
-    var team by remember { mutableStateOf(false) }
-    var mail by remember { mutableStateOf(true) }
-    var browser by remember { mutableStateOf(false) }
-    var server by remember { mutableStateOf(false) }
+    var model by remember { mutableStateOf(editing?.model ?: "Claude Haiku 4.5") }
+    val hasChief = Repo.chief() != null
+    var asChief by remember { mutableStateOf(!hasChief && Repo.agents.isEmpty()) }
+    var underChief by remember { mutableStateOf(false) }
+    var server by remember { mutableStateOf(editing?.perms?.server ?: false) }
+    var busy by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val arrow by animateFloatAsState(if (more) 180f else 0f, tween(260), label = "arrow")
+    val models = Repo.models.ifEmpty { fallbackModels }
+    val isOwner = Repo.me?.role == "owner"
 
     Column(Modifier.fillMaxSize().background(Color.White).imePadding()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconPill(Icons.Outlined.Close, onClose)
             Spacer(Modifier.width(12.dp))
-            Text("Новый агент", style = MaterialTheme.typography.titleLarge)
+            Text(if (editing != null) "Агент" else "Новый агент", style = MaterialTheme.typography.titleLarge)
         }
         CenteredScroll(Modifier.weight(1f).padding(horizontal = 20.dp)) {
             AnimatedContent(
@@ -56,7 +63,7 @@ fun CreateAgentScreen(onClose: () -> Unit) {
             ) { p -> Avatar(p, 150.dp) }
             Spacer(Modifier.height(14.dp))
             BasicTextField(
-                name, { name = it }, Modifier.fillMaxWidth(), singleLine = true,
+                name, { name = it.take(60) }, Modifier.fillMaxWidth(), singleLine = true,
                 textStyle = TextStyle(fontFamily = Inter, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, color = C.Ink),
                 cursorBrush = SolidColor(C.Ink),
                 decorationBox = { inner ->
@@ -68,7 +75,7 @@ fun CreateAgentScreen(onClose: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             BasicTextField(
-                role, { role = it }, Modifier.fillMaxWidth(), singleLine = true,
+                role, { role = it.take(500) }, Modifier.fillMaxWidth(), singleLine = true,
                 textStyle = TextStyle(fontFamily = Inter, fontSize = 17.sp, textAlign = TextAlign.Center, color = C.Ink),
                 cursorBrush = SolidColor(C.Ink),
                 decorationBox = { inner ->
@@ -102,24 +109,41 @@ fun CreateAgentScreen(onClose: () -> Unit) {
             AnimatedVisibility(more, enter = expandVertically(tween(300, easing = EaseOutCubic)) + fadeIn(tween(240)), exit = shrinkVertically(tween(220)) + fadeOut(tween(160))) {
                 Column(Modifier.fillMaxWidth()) {
                     Spacer(Modifier.height(6.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(models) { m -> Chip(m, m == model) { model = m } } }
+                    Text("Модель", color = C.Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(models) { m -> Chip(m.label, m.id == model) { model = m.id } } }
                     Spacer(Modifier.height(12.dp))
-                    PermRow("Помощник главного", "Отчитывается главному агенту", team) { team = it }
-                    PermRow("Своя почта", "Адрес на вашем домене", mail) { mail = it }
-                    PermRow("Браузер", "Можно перехватить управление", browser) { browser = it }
-                    PermRow("Сервер", "Файлы и команды в песочнице", server) { server = it }
+                    if (editing == null) {
+                        if (!hasChief) PermRow("Главный агент", "Руководит командой и распределяет задачи", asChief) { asChief = it }
+                        else PermRow("Помощник главного", "Отчитывается главному агенту", underChief) { underChief = it }
+                    }
+                    if (isOwner) PermRow("Сервер", "Команды в песочнице, каждая с вашего разрешения", server) { server = it }
                 }
+            }
+            if (editing != null) {
+                Spacer(Modifier.height(10.dp))
+                Text("Удалить агента", color = C.Bad, fontSize = 16.sp, modifier = Modifier.clip(CircleShape).bounceClick { confirmDelete = true }.padding(horizontal = 16.dp, vertical = 10.dp))
             }
         }
         Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
-            BlackButton("Создать", {
-                Store.agents.add(
-                    Agent("n${Store.agents.size}", name.ifBlank { pal.title }, role.ifBlank { "Новый помощник" }, pal, Status.Idle,
-                        "Готов к работе. Поставьте первую задачу.", "сейчас", parentId = if (team) "chief" else null, model = model),
-                )
-                onClose()
-            })
+            BlackButton(if (busy) "Подождите…" else if (editing != null) "Сохранить" else "Создать", {
+                busy = true
+                scope.launch {
+                    val n = name.ifBlank { pal.title }
+                    if (editing != null) { Repo.updateAgent(editing, n, role, pal, model, Perms(server = server)); onClose() }
+                    else if (Repo.createAgent(n, role, pal, model, asChief, underChief, Perms(server = server)) != null) onClose()
+                    busy = false
+                }
+            }, enabled = !busy)
         }
+    }
+    if (confirmDelete && editing != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false }, containerColor = Color.White, shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+            title = { Text("Удалить «${editing.name}»?", fontWeight = FontWeight.SemiBold) },
+            text = { Text("Переписка и память агента будут удалены без возможности восстановления.", color = C.Muted) },
+            confirmButton = { TextButton({ confirmDelete = false; scope.launch { Repo.deleteAgent(editing.id); onClose(); onClose() } }) { Text("Удалить", color = C.Bad, fontWeight = FontWeight.SemiBold) } },
+            dismissButton = { TextButton({ confirmDelete = false }) { Text("Отмена", color = C.Muted) } },
+        )
     }
 }
 

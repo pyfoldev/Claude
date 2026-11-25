@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"sync/atomic"
 
 	"staika/server/internal/llm"
 	"staika/server/internal/store"
@@ -81,10 +82,26 @@ func (a *App) MessageDTO(m *store.Message) MessageDTO {
 	return MessageDTO{m.ID, m.AgentID, m.Sender, m.Type, json.RawMessage(m.Content), m.CreatedAt}
 }
 
+var msgClock atomic.Int64
+
+// nextTs возвращает строго возрастающее время сообщения: два сообщения в одну миллисекунду не меняются местами в чате.
+func nextTs() int64 {
+	for {
+		last := msgClock.Load()
+		t := store.Now()
+		if t <= last {
+			t = last + 1
+		}
+		if msgClock.CompareAndSwap(last, t) {
+			return t
+		}
+	}
+}
+
 // Post сохраняет сообщение в чат агента и рассылает событие клиентам.
 func (a *App) Post(ag *store.Agent, sender, typ string, content map[string]any) *store.Message {
 	b, _ := json.Marshal(content)
-	m := &store.Message{ID: store.NewID(), AgentID: ag.ID, UserID: ag.UserID, Sender: sender, Type: typ, Content: string(b), CreatedAt: store.Now()}
+	m := &store.Message{ID: store.NewID(), AgentID: ag.ID, UserID: ag.UserID, Sender: sender, Type: typ, Content: string(b), CreatedAt: nextTs()}
 	if err := a.St.InsertMessage(m); err != nil {
 		log.Printf("insert message: %v", err)
 		return m

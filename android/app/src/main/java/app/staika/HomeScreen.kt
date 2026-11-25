@@ -30,9 +30,10 @@ fun HomeScreen(onChat: (String) -> Unit, onProfile: () -> Unit, onCreate: () -> 
     var search by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }
     var menu by remember { mutableStateOf(false) }
-    val all = Store.agents
-    val pinned = all.filter { it.pinned }
-    val list = all.filter { !it.pinned && (q.isBlank() || it.name.contains(q, true) || it.role.contains(q, true)) }
+    val all = Repo.agents
+    val pinned = Repo.pinned()
+    val list = all.filter { it !in pinned && (q.isBlank() || it.name.contains(q, true) || it.role.contains(q, true)) }
+        .sortedByDescending { it.lastAt }
 
     Column(Modifier.fillMaxSize().background(Color.White)) {
         Row(
@@ -43,7 +44,7 @@ fun HomeScreen(onChat: (String) -> Unit, onProfile: () -> Unit, onCreate: () -> 
                 Modifier.size(48.dp).shadow(4.dp, CircleShape, ambientColor = C.Shadow, spotColor = C.Shadow).clip(CircleShape)
                     .background(Color.White).border(1.dp, C.Line, CircleShape).bounceClick(onClick = onProfile),
                 Alignment.Center,
-            ) { Avatar(Pal.Cloud, 40.dp) }
+            ) { Text((Repo.me?.name?.firstOrNull() ?: 'С').uppercase(), fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
             Spacer(Modifier.weight(1f))
             IconPill(Icons.Outlined.Search, { search = !search; if (!search) q = "" }, size = 48.dp)
             Spacer(Modifier.width(10.dp))
@@ -58,6 +59,25 @@ fun HomeScreen(onChat: (String) -> Unit, onProfile: () -> Unit, onCreate: () -> 
         }
         AnimatedVisibility(search, enter = expandVertically(tween(260)) + fadeIn(), exit = shrinkVertically(tween(200)) + fadeOut()) {
             PillField(q, { q = it }, "Поиск", Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        }
+        AnimatedVisibility(!Repo.connected && Repo.loggedIn) {
+            Text(
+                "Нет связи с сервером, переподключаюсь…", color = C.Muted, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(CircleShape).background(C.Bubble).padding(vertical = 8.dp),
+            )
+        }
+        if (Repo.loaded && all.isEmpty()) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Avatar(Pal.Blue, 150.dp, Modifier.appear(0))
+                Spacer(Modifier.height(18.dp))
+                Text("Создайте первого агента", style = MaterialTheme.typography.titleLarge, modifier = Modifier.appear(1))
+                Spacer(Modifier.height(6.dp))
+                Text("Он станет вашим главным помощником. Потом добавите остальных.", color = C.Muted, fontSize = 16.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.appear(2))
+                Spacer(Modifier.height(24.dp))
+                Box(Modifier.appear(3)) { BlackButton("Создать агента", onCreate) }
+                Spacer(Modifier.height(60.dp))
+            }
+            return@Column
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
             if (!search && pinned.isNotEmpty()) {

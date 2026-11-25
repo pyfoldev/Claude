@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"staika/server/internal/config"
 	"staika/server/internal/core"
@@ -95,7 +98,15 @@ type env struct {
 
 func newEnv(t *testing.T, realRouter bool) *env {
 	t.Helper()
-	db, err := store.Open(fmt.Sprintf("file:mem%d?mode=memory&cache=shared", dbSeq.Add(1)))
+	url := fmt.Sprintf("file:mem%d?mode=memory&cache=shared", dbSeq.Add(1))
+	if pg := os.Getenv("STAIKA_TEST_PG"); pg != "" { // те же тесты на настоящем PostgreSQL
+		url = pg
+		if raw, err := sql.Open("pgx", pg); err == nil {
+			_, _ = raw.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+			raw.Close()
+		}
+	}
+	db, err := store.Open(url)
 	if err != nil {
 		t.Fatal(err)
 	}
