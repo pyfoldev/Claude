@@ -48,11 +48,7 @@ fun CreateAgentScreen(onClose: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Text("Новый агент", style = MaterialTheme.typography.titleLarge)
         }
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.height(10.dp))
+        CenteredScroll(Modifier.weight(1f).padding(horizontal = 20.dp)) {
             AnimatedContent(
                 pal, Modifier.size(150.dp),
                 transitionSpec = { (scaleIn(spring(0.55f, 420f), initialScale = 0.6f) + fadeIn(tween(160))) togetherWith (scaleOut(tween(140), targetScale = 0.8f) + fadeOut(tween(120))) },
@@ -114,7 +110,6 @@ fun CreateAgentScreen(onClose: () -> Unit) {
                     PermRow("Сервер", "Файлы и команды в песочнице", server) { server = it }
                 }
             }
-            Spacer(Modifier.height(12.dp))
         }
         Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
             BlackButton("Создать", {
