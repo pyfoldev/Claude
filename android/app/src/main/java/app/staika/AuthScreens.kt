@@ -6,14 +6,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -22,43 +25,50 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-private fun Floaty(pal: Pal, size: Int, x: Float, y: Float, phase: Int, rot: Float) {
+private fun Floaty(pal: Pal, size: Int, x: Float, y: Float, phase: Int, rot: Float, delayMs: Int) {
     val t = rememberInfiniteTransition(label = "f")
     val dy by t.animateFloat(
-        -10f, 10f, infiniteRepeatable(tween(2400 + phase * 300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "dy",
+        -9f, 9f, infiniteRepeatable(tween(2600 + phase * 350, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "dy",
     )
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(delayMs.toLong()); shown = true }
+    val sc by animateFloatAsState(if (shown) 1f else 0f, spring(0.5f, 260f), label = "in")
     BoxWithConstraints(Modifier.fillMaxSize()) {
         Avatar(
             pal, size.dp,
-            Modifier.offset(x = maxWidth * x - (size / 2).dp, y = maxHeight * y + dy.dp).rotate(rot),
+            Modifier.offset(x = maxWidth * x - (size / 2).dp, y = maxHeight * y - (size / 2).dp + dy.dp).rotate(rot).scale(sc),
         )
     }
 }
 
 @Composable
 fun WelcomeScreen(onLogin: () -> Unit, onSignUp: () -> Unit) {
+    var up by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(120); up = true }
+    val a by animateFloatAsState(if (up) 1f else 0f, tween(600, easing = EaseOutCubic), label = "welcome")
     Box(Modifier.fillMaxSize().background(Color.White)) {
-        Floaty(Pal.Green, 84, 0.22f, 0.10f, 0, -6f)
-        Floaty(Pal.Yellow, 76, 0.78f, 0.20f, 1, 8f)
-        Floaty(Pal.Pink, 70, 0.10f, 0.52f, 2, -10f)
-        Floaty(Pal.Blue, 88, 0.86f, 0.55f, 3, 6f)
-        Floaty(Pal.Orange, 74, 0.52f, 0.69f, 4, -4f)
+        Floaty(Pal.Green, 96, 0.22f, 0.15f, 0, -5f, 100)
+        Floaty(Pal.Yellow, 84, 0.80f, 0.27f, 1, 7f, 220)
+        Floaty(Pal.Pink, 84, 0.04f, 0.60f, 2, -9f, 340)
+        Floaty(Pal.Blue, 104, 0.92f, 0.62f, 3, 5f, 460)
+        Floaty(Pal.Orange, 88, 0.50f, 0.74f, 4, -4f, 580)
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 24.dp),
+            Modifier.fillMaxSize().padding(horizontal = 24.dp).graphicsLayer { alpha = a; translationY = (1f - a) * 30f },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.weight(1.1f))
-            Text("Стайка", style = MaterialTheme.typography.headlineLarge, fontSize = 40.sp)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.weight(1.25f))
+            Text("Стайка", style = MaterialTheme.typography.headlineLarge, fontSize = 44.sp)
+            Spacer(Modifier.height(10.dp))
             Text(
-                "Ваша команда ИИ-агентов,\nкоторые доводят дела до конца.",
-                color = C.Muted, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyLarge,
+                "Ваша команда агентов,\nкоторые доводят дело до конца.",
+                color = C.Muted, textAlign = TextAlign.Center, fontSize = 19.sp, lineHeight = 26.sp,
             )
-            Spacer(Modifier.weight(1.4f))
+            Spacer(Modifier.weight(1.1f))
             BlackButton("Войти", onLogin)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             GrayButton("Регистрация", onSignUp)
-            Spacer(Modifier.height(28.dp).navigationBarsPadding())
+            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.navigationBarsPadding())
         }
     }
 }
@@ -121,7 +131,7 @@ fun AuthScreen(startSignUp: Boolean, onBack: () -> Unit, onDone: () -> Unit) {
                     pass, { pass = it }, "Пароль", password = !show, keyboard = KeyboardType.Password,
                     trailing = {
                         IconButton({ show = !show }) {
-                            Icon(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, null, tint = C.Muted)
+                            Icon(if (show) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null, tint = C.Muted)
                         }
                     },
                 )

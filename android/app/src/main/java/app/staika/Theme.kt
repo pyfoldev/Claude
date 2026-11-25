@@ -8,23 +8,34 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Палитра: белая основная тема, нейтральные серые, яркий акцент только у персонажей. */
+val Inter = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
+
+/** Палитра: белая тема, нейтральные серые, цвет приносят только персонажи. */
 object C {
     val Bg = Color.White
-    val Ink = Color(0xFF0B0B10)
-    val Muted = Color(0xFF8C8C96)
-    val Bubble = Color(0xFFF1F1F4)
+    val Ink = Color(0xFF0A0A0B)
+    val Muted = Color(0xFF8E8E96)
+    val Bubble = Color(0xFFF1F1F3)
+    val Field = Color(0xFFF1F1F3)
     val Tile = Color(0xFFF1EBFC)
-    val Line = Color(0xFFE9E9EF)
+    val Line = Color(0xFFE9E9ED)
     val Accent = Color(0xFF7B5CF0)
-    val Ok = Color(0xFF22B573)
-    val Warn = Color(0xFFFF9F1C)
+    val Ok = Color(0xFF30B566)
+    val Warn = Color(0xFFFF9500)
     val Bad = Color(0xFFE5484D)
     val Blue = Color(0xFF2F7BFF)
+    val Shadow = Color(0x26000000)
 }
 
 private val scheme = lightColorScheme(
@@ -36,23 +47,22 @@ private val scheme = lightColorScheme(
     outline = C.Line,
 )
 
+private fun t(size: Int, w: FontWeight, line: Int = 0, ls: Double = 0.0) =
+    TextStyle(fontFamily = Inter, fontSize = size.sp, fontWeight = w, lineHeight = if (line > 0) line.sp else TextStyle.Default.lineHeight, letterSpacing = ls.sp)
+
 private val type = Typography(
-    headlineLarge = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp),
-    headlineMedium = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
-    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
-    bodySmall = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
-    labelLarge = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+    headlineLarge = t(40, FontWeight.Bold, ls = -1.0),
+    headlineMedium = t(30, FontWeight.Bold, ls = -0.6),
+    titleLarge = t(22, FontWeight.SemiBold, ls = -0.3),
+    titleMedium = t(18, FontWeight.SemiBold, ls = -0.2),
+    bodyLarge = t(17, FontWeight.Normal, 23),
+    bodyMedium = t(16, FontWeight.Normal, 22),
+    bodySmall = t(14, FontWeight.Normal, 19),
+    labelLarge = t(16, FontWeight.SemiBold),
+    labelMedium = t(14, FontWeight.Medium),
 )
 
-private val shapes = Shapes(
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-)
+private val shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(28.dp))
 
 @Composable
 fun StaikaTheme(content: @Composable () -> Unit) {

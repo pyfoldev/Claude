@@ -1,13 +1,17 @@
 package app.staika
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,41 +27,82 @@ fun PluginsScreen(onBack: () -> Unit) {
     var q by remember { mutableStateOf("") }
     val added = remember { mutableStateMapOf<String, Boolean>().also { m -> Store.plugins.forEach { m[it.name] = it.added } } }
     val shown = Store.plugins.filter { q.isBlank() || it.name.contains(q, true) || it.desc.contains(q, true) }
+    val flat = buildList<Any> { shown.groupBy { it.group }.forEach { (g, l) -> add(g); addAll(l) } }
 
     Column(Modifier.fillMaxSize().background(Color.White)) {
         ScreenTop("Плагины", onBack)
-        PillField(q, { q = it }, "Поиск среди 130+ плагинов", Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            trailing = { Icon(Icons.Rounded.Search, null, tint = C.Muted, modifier = Modifier.padding(end = 6.dp)) })
-        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-            shown.groupBy { it.group }.forEach { (group, items) ->
-                item(key = group) {
-                    Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
-                        Text(group, color = C.Muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        Text("Все", color = C.Muted, fontSize = 14.sp)
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                PillField(q, { q = it }, "Поиск плагинов", trailing = { Icon(Icons.Outlined.Search, null, tint = C.Muted, modifier = Modifier.padding(end = 8.dp)) })
+            }
+            Spacer(Modifier.width(10.dp))
+            IconPill(Icons.Outlined.Tune, { }, size = 54.dp)
+        }
+        LazyColumn(contentPadding = PaddingValues(bottom = 28.dp)) {
+            itemsIndexed(flat, key = { _, it -> if (it is Plugin) it.name else it.toString() }) { i, item ->
+                if (item is String) {
+                    Row(Modifier.appear(i).padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Text(item, color = C.Muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                        Text("Все", color = C.Muted, fontSize = 15.sp)
                     }
-                }
-                items(items.size, key = { items[it].name }) { i ->
-                    val p = items[i]
-                    val on = added[p.name] == true
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        GlyphBadge(p.glyph, p.color)
+                } else if (item is Plugin) {
+                    val on = added[item.name] == true
+                    val bg by animateColorAsState(if (on) C.Ok.copy(alpha = 0.12f) else C.Bubble, tween(240), label = "pluginBg")
+                    val fg by animateColorAsState(if (on) C.Ok else C.Ink, tween(240), label = "pluginFg")
+                    Row(Modifier.fillMaxWidth().appear(i).padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BrandTile(item)
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                            Text(p.desc, color = C.Muted, fontSize = 14.sp, maxLines = 2)
+                            Text(item.name, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                            Text(item.desc, color = C.Muted, fontSize = 15.sp, maxLines = 2, lineHeight = 20.sp)
                         }
                         Spacer(Modifier.width(10.dp))
                         Row(
-                            Modifier.clip(CircleShape).background(if (on) C.Ok.copy(alpha = 0.12f) else C.Bubble)
-                                .clickable { added[p.name] = !on }.padding(horizontal = 14.dp, vertical = 8.dp),
+                            Modifier.bounceClick { added[item.name] = !on }.clip(CircleShape).background(bg).padding(horizontal = 15.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (on) { Icon(Icons.Rounded.Check, null, tint = C.Ok, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)) }
-                            Text(if (on) "Добавлено" else "Добавить", color = if (on) C.Ok else C.Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            if (on) { Icon(Icons.Outlined.Check, null, tint = fg, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(4.dp)) }
+                            Text(if (on) "Добавлено" else "Добавить", color = fg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** Узнаваемые значки основных сервисов, остальные: цветная буква. */
+@Composable
+private fun BrandTile(p: Plugin) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(15.dp)
+    Box(Modifier.size(50.dp).clip(shape).background(Color.White).border(1.dp, C.Line, shape), Alignment.Center) {
+        when (p.name) {
+            "Gmail" -> androidx.compose.foundation.Canvas(Modifier.size(30.dp)) {
+                val w = size.width; val sw = w * 0.15f
+                fun l(c: Color, x1: Float, y1: Float, x2: Float, y2: Float) =
+                    drawLine(c, androidx.compose.ui.geometry.Offset(x1 * w, y1 * w), androidx.compose.ui.geometry.Offset(x2 * w, y2 * w), sw, androidx.compose.ui.graphics.StrokeCap.Round)
+                l(Color(0xFF4285F4), 0.16f, 0.78f, 0.16f, 0.30f)
+                l(Color(0xFF34A853), 0.84f, 0.78f, 0.84f, 0.30f)
+                l(Color(0xFFEA4335), 0.16f, 0.30f, 0.50f, 0.58f)
+                l(Color(0xFFEA4335), 0.84f, 0.30f, 0.50f, 0.58f)
+            }
+            "Google Календарь" -> Box(Modifier.size(30.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)).background(Color(0xFF4285F4)), Alignment.Center) {
+                Box(Modifier.size(22.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).background(Color.White), Alignment.Center) {
+                    Text("31", color = Color(0xFF4285F4), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            "Google Диск" -> androidx.compose.foundation.Canvas(Modifier.size(30.dp)) {
+                val w = size.width; val sw = w * 0.17f
+                fun l(c: Color, x1: Float, y1: Float, x2: Float, y2: Float) =
+                    drawLine(c, androidx.compose.ui.geometry.Offset(x1 * w, y1 * w), androidx.compose.ui.geometry.Offset(x2 * w, y2 * w), sw, androidx.compose.ui.graphics.StrokeCap.Round)
+                l(Color(0xFF34A853), 0.40f, 0.18f, 0.14f, 0.66f)
+                l(Color(0xFFFBBC04), 0.60f, 0.18f, 0.86f, 0.66f)
+                l(Color(0xFF4285F4), 0.20f, 0.80f, 0.80f, 0.80f)
+            }
+            "Telegram" -> Box(Modifier.size(30.dp).clip(CircleShape).background(Color(0xFF229ED9)), Alignment.Center) {
+                Icon(Icons.Outlined.Send, null, tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+            else -> Text(p.glyph, color = Color(p.color), fontWeight = FontWeight.Bold, fontSize = 19.sp)
         }
     }
 }

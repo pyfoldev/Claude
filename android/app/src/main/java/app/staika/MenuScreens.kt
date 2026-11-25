@@ -8,8 +8,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,13 +42,13 @@ fun ProfileScreen(onBack: () -> Unit, go: (String) -> Unit) {
                 }
             }
             Spacer(Modifier.height(14.dp))
-            MenuRow(Icons.Rounded.Groups, "Команда", "Кто кому подчиняется") { go("team") }
-            MenuRow(Icons.Rounded.TaskAlt, "Задачи", "Общая доска всех агентов") { go("tasks") }
-            MenuRow(Icons.Rounded.Extension, "Плагины", "Gmail, Календарь, Диск и другие") { go("plugins") }
-            MenuRow(Icons.Rounded.Computer, "Компьютер агентов", "Браузер, файлы, терминал") { go("computer") }
-            MenuRow(Icons.Rounded.BarChart, "Статистика", "Расходы и работа агентов") { go("stats") }
-            MenuRow(Icons.Rounded.History, "Журнал активности", "Что делали агенты и ваши решения") { go("activity") }
-            MenuRow(Icons.Rounded.Settings, "Настройки", "Провайдеры, голос, сервер") { go("settings") }
+            MenuRow(Icons.Outlined.Groups, "Команда", "Кто кому подчиняется") { go("team") }
+            MenuRow(Icons.Outlined.TaskAlt, "Задачи", "Общая доска всех агентов") { go("tasks") }
+            MenuRow(Icons.Outlined.Extension, "Плагины", "Gmail, Календарь, Диск и другие") { go("plugins") }
+            MenuRow(Icons.Outlined.Computer, "Компьютер агентов", "Браузер, файлы, терминал") { go("computer") }
+            MenuRow(Icons.Outlined.BarChart, "Статистика", "Расходы и работа агентов") { go("stats") }
+            MenuRow(Icons.Outlined.History, "Журнал активности", "Что делали агенты и ваши решения") { go("activity") }
+            MenuRow(Icons.Outlined.Settings, "Настройки", "Провайдеры, голос, сервер") { go("settings") }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -66,7 +66,7 @@ private fun MenuRow(icon: ImageVector, title: String, sub: String, onClick: () -
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             Text(sub, color = C.Muted, fontSize = 13.sp)
         }
-        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = C.Muted)
+        Icon(Icons.Outlined.ChevronRight, null, tint = C.Muted)
     }
 }
 
@@ -139,8 +139,7 @@ fun TasksScreen(onBack: () -> Unit, onChat: (String) -> Unit) {
                     Spacer(Modifier.height(4.dp))
                     Text(t.due, color = C.Muted, fontSize = 13.sp)
                     Spacer(Modifier.height(10.dp))
-                    LinearProgressIndicator({ t.progress }, Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = C.Ink, trackColor = C.Bubble,
-                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    ProgressBar(t.progress)
                 }
             }
         }
@@ -163,7 +162,7 @@ fun ComputerScreen(onBack: () -> Unit) {
             when (tab) {
                 0 -> Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().background(C.Bubble).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Lock, null, tint = C.Muted, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Outlined.Lock, null, tint = C.Muted, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
                         Text("console.hosting.example/projects", fontSize = 13.sp, color = C.Ink)
                     }
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -235,8 +234,7 @@ fun StatsScreen(onBack: () -> Unit) {
                         Avatar(a.pal, 32.dp); Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(a.name, fontSize = 14.sp); Spacer(Modifier.height(4.dp))
-                            LinearProgressIndicator({ p }, Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = C.Ink, trackColor = C.Bubble,
-                                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            ProgressBar(p)
                         }
                         Spacer(Modifier.width(10.dp)); Text("$%.2f".format(p * 5), color = C.Muted, fontSize = 13.sp)
                     }
@@ -261,12 +259,12 @@ private data class Act(val icon: ImageVector, val who: String, val text: String,
 @Composable
 fun ActivityScreen(onBack: () -> Unit) {
     val items = listOf(
-        Act(Icons.Rounded.Mail, "mail", "Прочитал 41 письмо", "8:20", "Авто"),
-        Act(Icons.Rounded.Check, "ea", "Создал событие «Совет директоров»", "8:41", "Вы разрешили"),
-        Act(Icons.Rounded.Terminal, "dev", "Запустил тесты в песочнице", "8:50", "Авто"),
-        Act(Icons.Rounded.RocketLaunch, "dev", "Деплой staika-api 0.4.2", "9:02", "Ждёт вас"),
-        Act(Icons.Rounded.Send, "mail", "Отправка письма anna@example.com", "9:05", "Вы отклонили"),
-        Act(Icons.Rounded.Backup, "ops", "Резервная копия 2.1 ГБ", "03:00", "Авто"),
+        Act(Icons.Outlined.Mail, "mail", "Прочитал 41 письмо", "8:20", "Авто"),
+        Act(Icons.Outlined.Check, "ea", "Создал событие «Совет директоров»", "8:41", "Вы разрешили"),
+        Act(Icons.Outlined.Terminal, "dev", "Запустил тесты в песочнице", "8:50", "Авто"),
+        Act(Icons.Outlined.RocketLaunch, "dev", "Деплой staika-api 0.4.2", "9:02", "Ждёт вас"),
+        Act(Icons.Outlined.Send, "mail", "Отправка письма anna@example.com", "9:05", "Вы отклонили"),
+        Act(Icons.Outlined.Backup, "ops", "Резервная копия 2.1 ГБ", "03:00", "Авто"),
     )
     Column(Modifier.fillMaxSize().background(Color.White)) {
         ScreenTop("Журнал", onBack)

@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,12 +38,12 @@ fun CallScreen(agentId: String, onEnd: () -> Unit) {
     )
     val infinite = rememberInfiniteTransition(label = "pulse")
     val ring by infinite.animateFloat(1f, 1.5f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "r")
-    val ringA by infinite.animateFloat(0.35f, 0f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "ra")
+    val ringA by infinite.animateFloat(0.18f, 0f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "ra")
 
     Column(Modifier.fillMaxSize().background(Color.White).statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(16.dp))
         Row(Modifier.clip(CircleShape).background(C.Bubble).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.GraphicEq, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+            Icon(Icons.Outlined.GraphicEq, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
             Text("Claude Haiku 4.5 · голос Владимир", fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
         Spacer(Modifier.weight(0.7f))
@@ -64,10 +64,10 @@ fun CallScreen(agentId: String, onEnd: () -> Unit) {
         }
         Spacer(Modifier.weight(0.5f))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            RoundBtn(if (muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (muted) "Звук выкл." else "Микрофон", muted) { muted = !muted }
-            RoundBtn(Icons.Rounded.VolumeUp, "Динамик", speaker) { speaker = !speaker }
-            RoundBtn(Icons.Rounded.Keyboard, "Написать", false) { onEnd() }
-            RoundBtn(Icons.Rounded.CallEnd, "Завершить", false, danger = true, onClick = onEnd)
+            RoundBtn(if (muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, if (muted) "Звук выкл." else "Микрофон", muted) { muted = !muted }
+            RoundBtn(Icons.Outlined.VolumeUp, "Динамик", speaker) { speaker = !speaker }
+            RoundBtn(Icons.Outlined.Keyboard, "Написать", false) { onEnd() }
+            RoundBtn(Icons.Outlined.CallEnd, "Завершить", false, danger = true, onClick = onEnd)
         }
         Spacer(Modifier.height(20.dp))
     }

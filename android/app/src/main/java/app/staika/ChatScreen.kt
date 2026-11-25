@@ -1,5 +1,6 @@
 package app.staika
 
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -8,16 +9,22 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -45,10 +52,7 @@ private fun seed(a: Agent): List<Msg> = when (a.id) {
         Msg.Approval(3, "Деплой на сервер", "docker compose up -d api\nПроект: staika-api, версия 0.4.2", "Системное действие"),
         Msg.Task("Выкатить релиз 0.4.2", 0.45f, "В работе"),
     )
-    else -> listOf(
-        Msg.Day("Сегодня"),
-        Msg.Text(a.last, false),
-    )
+    else -> listOf(Msg.Day("Сегодня"), Msg.Text(a.last, false))
 }
 
 @Composable
@@ -69,92 +73,101 @@ fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComput
         input = ""
         msgs.add(Msg.Text(t, true))
         scope.launch {
-            delay(500); msgs.add(Msg.Typing)
-            delay(1600); msgs.remove(Msg.Typing)
+            delay(450); msgs.add(Msg.Typing)
+            delay(1500); msgs.remove(Msg.Typing)
             msgs.add(Msg.Text("Принял. Берусь за это и вернусь с результатом.", false))
         }
     }
 
     Column(Modifier.fillMaxSize().background(Color.White).imePadding()) {
         Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BackPill(onBack)
             Spacer(Modifier.width(10.dp))
-            Surface(shape = CircleShape, color = Color.White, shadowElevation = 5.dp) {
-                Row(Modifier.padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(agent.pal, 32.dp, status = agent.status)
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(agent.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                        if (agent.status != Status.Idle) Text(agent.status.label, color = C.Muted, fontSize = 11.sp, lineHeight = 12.sp)
-                    }
+            Row(
+                Modifier.shadow(4.dp, CircleShape, ambientColor = C.Shadow, spotColor = C.Shadow).clip(CircleShape).background(Color.White)
+                    .border(1.dp, C.Line, CircleShape).padding(start = 7.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Avatar(agent.pal, 36.dp, status = agent.status)
+                Spacer(Modifier.width(9.dp))
+                Column {
+                    Text(agent.name, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 21.sp)
+                    if (agent.status != Status.Idle) Text(agent.status.label, color = C.Muted, fontSize = 13.sp, lineHeight = 14.sp)
                 }
             }
             Spacer(Modifier.weight(1f))
-            if (agent.id == "dev" || agent.id == "ops") {
-                IconPill(Icons.Rounded.Computer, onComputer); Spacer(Modifier.width(10.dp))
-            }
-            IconPill(Icons.Rounded.Call, onCall)
+            if (agent.id == "dev" || agent.id == "ops") { IconPill(Icons.Outlined.Computer, onComputer); Spacer(Modifier.width(8.dp)) }
+            IconPill(Icons.Outlined.Call, onCall)
         }
 
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(), state = listState,
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             itemsIndexed(msgs) { i, m ->
-                when (m) {
-                    is Msg.Day -> Text(m.label, color = C.Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    is Msg.Text -> Bubble(m.mine) { Text(m.text, color = if (m.mine) Color.White else C.Ink, style = MaterialTheme.typography.bodyLarge) }
-                    is Msg.Doc -> DocCard(m)
-                    is Msg.Task -> TaskCard(m)
-                    is Msg.Approval -> ApprovalCard(m) { d -> msgs[i] = m.copy(decision = d) }
-                    Msg.Typing -> TypingBubble()
+                Box(Modifier.animateItem().appear(0, 14.dp)) {
+                    when (m) {
+                        is Msg.Day -> Text(m.label, color = C.Muted, fontSize = 14.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), textAlign = TextAlign.Center)
+                        is Msg.Text -> Bubble(m.mine) { Text(m.text, color = if (m.mine) Color.White else C.Ink, fontSize = 17.sp, lineHeight = 23.sp) }
+                        is Msg.Doc -> DocCard(m)
+                        is Msg.Task -> TaskCard(m)
+                        is Msg.Approval -> ApprovalCard(m) { d -> msgs[i] = m.copy(decision = d) }
+                        Msg.Typing -> TypingBubble()
+                    }
                 }
             }
         }
 
-        // поле ввода
         Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
             Box {
-                IconPill(Icons.Rounded.Add, { attach = true }, size = 48.dp)
-                DropdownMenu(attach, { attach = false }, containerColor = Color.White, shape = RoundedCornerShape(20.dp)) {
-                    DropdownMenuItem({ Text("Фото") }, { attach = false }, leadingIcon = { Icon(Icons.Rounded.Image, null) })
-                    DropdownMenuItem({ Text("Файл") }, { attach = false }, leadingIcon = { Icon(Icons.Rounded.AttachFile, null) })
-                    DropdownMenuItem({ Text("Камера") }, { attach = false }, leadingIcon = { Icon(Icons.Rounded.PhotoCamera, null) })
+                IconPill(Icons.Outlined.Add, { attach = true }, size = 50.dp)
+                DropdownMenu(attach, { attach = false }, containerColor = Color.White, shape = RoundedCornerShape(22.dp)) {
+                    DropdownMenuItem({ Text("Фото") }, { attach = false }, leadingIcon = { Icon(Icons.Outlined.Image, null) })
+                    DropdownMenuItem({ Text("Файл") }, { attach = false }, leadingIcon = { Icon(Icons.Outlined.AttachFile, null) })
+                    DropdownMenuItem({ Text("Камера") }, { attach = false }, leadingIcon = { Icon(Icons.Outlined.PhotoCamera, null) })
                 }
             }
             Spacer(Modifier.width(10.dp))
-            Surface(Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(26.dp), color = Color.White, shadowElevation = 5.dp) {
-                Row(Modifier.padding(start = 18.dp, end = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
-                        if (recording) DictationWave() else {
-                            if (input.isEmpty()) Text("Напишите: ${agent.name}", color = C.Muted, fontSize = 16.sp)
-                            androidx.compose.foundation.text.BasicTextField(
-                                input, { input = it }, Modifier.fillMaxWidth(), maxLines = 5,
-                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = C.Ink),
-                                cursorBrush = androidx.compose.ui.graphics.SolidColor(C.Ink),
-                            )
-                        }
+            Row(
+                Modifier.weight(1f).heightIn(min = 50.dp).shadow(4.dp, RoundedCornerShape(26.dp), ambientColor = C.Shadow, spotColor = C.Shadow)
+                    .clip(RoundedCornerShape(26.dp)).background(Color.White).border(1.dp, C.Line, RoundedCornerShape(26.dp))
+                    .padding(start = 18.dp, end = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.weight(1f).padding(vertical = 11.dp).animateContentSize()) {
+                    if (recording) DictationWave() else {
+                        if (input.isEmpty()) Text("Напишите: ${agent.name}", color = C.Muted, fontSize = 17.sp)
+                        BasicTextField(
+                            input, { input = it }, Modifier.fillMaxWidth(), maxLines = 5,
+                            textStyle = TextStyle(fontFamily = Inter, fontSize = 17.sp, color = C.Ink),
+                            cursorBrush = SolidColor(C.Ink),
+                        )
                     }
-                    val showSend = input.isNotBlank() && !recording
-                    Box(
-                        Modifier.size(38.dp).clip(CircleShape).background(if (showSend || recording) C.Ink else C.Bubble)
-                            .clickable {
-                                if (showSend) send()
-                                else if (recording) { recording = false; input = "Подготовь отчёт по расходам за неделю" }
-                                else recording = true
-                            },
-                        Alignment.Center,
-                    ) {
+                }
+                val showSend = input.isNotBlank() && !recording
+                val dark = showSend || recording
+                val bg by animateColorAsState(if (dark) C.Ink else Color(0xFFEDEDF0), tween(220), label = "micBg")
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(bg).bounceClick(down = 0.88f) {
+                        if (showSend) send() else if (recording) { recording = false; input = "Подготовь отчёт по расходам за неделю" } else recording = true
+                    },
+                    Alignment.Center,
+                ) {
+                    AnimatedContent(
+                        if (showSend) 1 else if (recording) 2 else 0,
+                        transitionSpec = { (scaleIn(spring(0.6f, 500f)) + fadeIn(tween(120))) togetherWith (scaleOut(tween(120)) + fadeOut(tween(100))) },
+                        label = "micIcon",
+                    ) { s ->
                         Icon(
-                            if (showSend) Icons.Rounded.ArrowUpward else if (recording) Icons.Rounded.Stop else Icons.Rounded.Mic,
-                            null, tint = if (showSend || recording) Color.White else C.Muted, modifier = Modifier.size(22.dp),
+                            when (s) { 1 -> Icons.Outlined.ArrowUpward; 2 -> Icons.Outlined.Stop; else -> Icons.Outlined.Mic },
+                            null, tint = if (s == 0) C.Muted else Color.White, modifier = Modifier.size(23.dp),
                         )
                     }
                 }
@@ -167,7 +180,7 @@ fun ChatScreen(agentId: String, onBack: () -> Unit, onCall: () -> Unit, onComput
 private fun Bubble(mine: Boolean, content: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Box(
-            Modifier.widthIn(max = 300.dp)
+            Modifier.widthIn(max = 310.dp)
                 .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = if (mine) 22.dp else 6.dp, bottomEnd = if (mine) 6.dp else 22.dp))
                 .background(if (mine) C.Ink else C.Bubble).padding(horizontal = 16.dp, vertical = 11.dp),
         ) { content() }
@@ -178,7 +191,7 @@ private fun Bubble(mine: Boolean, content: @Composable () -> Unit) {
 private fun TypingBubble() {
     val t = rememberInfiniteTransition(label = "t")
     Bubble(false) {
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.height(22.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.height(23.dp), verticalAlignment = Alignment.CenterVertically) {
             repeat(3) { i ->
                 val a by t.animateFloat(0.25f, 1f, infiniteRepeatable(tween(600, delayMillis = i * 160), RepeatMode.Reverse), label = "d$i")
                 Box(Modifier.size(8.dp).clip(CircleShape).background(C.Muted.copy(alpha = a)))
@@ -190,80 +203,82 @@ private fun TypingBubble() {
 @Composable
 private fun DocCard(d: Msg.Doc) {
     Row(
-        Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(20.dp)).background(C.Bubble).clickable { }.padding(12.dp),
+        Modifier.widthIn(max = 310.dp).clip(RoundedCornerShape(20.dp)).background(C.Bubble).bounceClick(down = 0.97f) { }.padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFC83D)), Alignment.Center) {
-            Icon(Icons.Rounded.Description, null, tint = Color.White)
+        Box(Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFC83D)), Alignment.Center) {
+            Icon(Icons.Outlined.Description, null, tint = Color.White, modifier = Modifier.size(26.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(d.title, fontWeight = FontWeight.Medium, fontSize = 16.sp)
-            Text(d.host, color = C.Muted, fontSize = 14.sp)
+            Text(d.title, fontWeight = FontWeight.Medium, fontSize = 17.sp)
+            Text(d.host, color = C.Muted, fontSize = 15.sp)
         }
     }
 }
 
 @Composable
 private fun TaskCard(t: Msg.Task) {
-    Column(Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(20.dp)).background(C.Bubble).padding(14.dp)) {
+    var p by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(t.progress) { p = t.progress }
+    val anim by animateFloatAsState(p, tween(900, easing = EaseOutCubic), label = "progress")
+    Column(Modifier.widthIn(max = 310.dp).clip(RoundedCornerShape(20.dp)).background(C.Bubble).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.TaskAlt, null, tint = C.Ink, modifier = Modifier.size(20.dp))
+            Icon(Icons.Outlined.TaskAlt, null, tint = C.Ink, modifier = Modifier.size(21.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Задача", color = C.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Text(t.status, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("Задача", color = C.Muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text(t.status, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(6.dp))
-        Text(t.title, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+        Text(t.title, fontWeight = FontWeight.Medium, fontSize = 17.sp)
         Spacer(Modifier.height(10.dp))
-        LinearProgressIndicator(
-            progress = { t.progress }, Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
-            color = C.Ink, trackColor = Color.White, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round,
-        )
+        ProgressBar(anim, track = Color.White)
     }
 }
 
 @Composable
 private fun ApprovalCard(a: Msg.Approval, onDecide: (Decision) -> Unit) {
+    val border by animateColorAsState(if (a.decision == Decision.Pending) C.Warn else C.Line, tween(400), label = "ab")
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White)
-            .border(1.5.dp, if (a.decision == Decision.Pending) C.Warn else C.Line, RoundedCornerShape(24.dp)).padding(16.dp),
+        Modifier.fillMaxWidth().animateContentSize(spring(0.8f, 400f)).clip(RoundedCornerShape(24.dp)).background(Color.White)
+            .border(1.5.dp, border, RoundedCornerShape(24.dp)).padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(34.dp).clip(CircleShape).background(C.Warn.copy(alpha = 0.15f)), Alignment.Center) {
-                Icon(Icons.Rounded.GppMaybe, null, tint = C.Warn, modifier = Modifier.size(20.dp))
+            Box(Modifier.size(38.dp).clip(CircleShape).background(C.Warn.copy(alpha = 0.14f)), Alignment.Center) {
+                Icon(Icons.Outlined.GppMaybe, null, tint = C.Warn, modifier = Modifier.size(22.dp))
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("Нужно ваше разрешение", color = C.Muted, fontSize = 12.sp)
-                Text(a.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text("Нужно ваше разрешение", color = C.Muted, fontSize = 13.sp)
+                Text(a.title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
         Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Bubble).padding(12.dp)) {
-            Text(a.detail, fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, lineHeight = 19.sp)
+            Text(a.detail, fontSize = 14.sp, fontFamily = FontFamily.Monospace, lineHeight = 20.sp)
         }
         Spacer(Modifier.height(8.dp))
-        Text("Тип: ${a.risk}", color = C.Muted, fontSize = 12.sp)
+        Text("Тип: ${a.risk}", color = C.Muted, fontSize = 13.sp)
         Spacer(Modifier.height(12.dp))
         when (a.decision) {
             Decision.Pending -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button({ onDecide(Decision.Denied) }, Modifier.weight(1f).height(46.dp), shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = C.Bubble, contentColor = C.Ink)) { Text("Отклонить", fontWeight = FontWeight.SemiBold) }
-                    Button({ onDecide(Decision.Allowed) }, Modifier.weight(1f).height(46.dp), shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = C.Ink, contentColor = Color.White)) { Text("Разрешить", fontWeight = FontWeight.SemiBold) }
+                    Box(Modifier.weight(1f).height(48.dp).bounceClick { onDecide(Decision.Denied) }.clip(CircleShape).background(C.Bubble), Alignment.Center) {
+                        Text("Отклонить", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    }
+                    Box(Modifier.weight(1f).height(48.dp).bounceClick { onDecide(Decision.Allowed) }.clip(CircleShape).background(C.Ink), Alignment.Center) {
+                        Text("Разрешить", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    }
                 }
-                Spacer(Modifier.height(6.dp))
-                Text("Разрешать всегда для этого агента", color = C.Muted, fontSize = 13.sp,
-                    modifier = Modifier.align(Alignment.CenterHorizontally).clickable { onDecide(Decision.Allowed) }.padding(8.dp))
+                Text("Разрешать всегда для этого агента", color = C.Muted, fontSize = 14.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).bounceClick { onDecide(Decision.Allowed) }.padding(top = 10.dp, bottom = 2.dp))
             }
             Decision.Allowed -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.CheckCircle, null, tint = C.Ok, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
+                Icon(Icons.Outlined.CheckCircle, null, tint = C.Ok, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(8.dp))
                 Text("Разрешено, выполняю", color = C.Ok, fontWeight = FontWeight.SemiBold)
             }
             Decision.Denied -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Cancel, null, tint = C.Bad, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
+                Icon(Icons.Outlined.Cancel, null, tint = C.Bad, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(8.dp))
                 Text("Отклонено", color = C.Bad, fontWeight = FontWeight.SemiBold)
             }
         }
@@ -274,8 +289,8 @@ private fun ApprovalCard(a: Msg.Approval, onDecide: (Decision) -> Unit) {
 fun DictationWave(modifier: Modifier = Modifier, color: Color = C.Ink) {
     val t = rememberInfiniteTransition(label = "w")
     Row(modifier.height(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text("Слушаю", color = C.Muted, fontSize = 16.sp); Spacer(Modifier.width(6.dp))
-        repeat(22) { i ->
+        Text("Слушаю", color = C.Muted, fontSize = 17.sp); Spacer(Modifier.width(6.dp))
+        repeat(20) { i ->
             val h by t.animateFloat(4f, 22f, infiniteRepeatable(tween(420 + (i * 53) % 300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "b$i")
             Box(Modifier.width(3.dp).height(h.dp).clip(CircleShape).background(color))
         }
