@@ -24,6 +24,8 @@ import { injectSecrets, maskSecrets, tasksTool, listSecretNames } from './extras
 import { mailTool, hasMail } from './mail.js';
 import { dataQuery } from './datatools.js';
 import { createMission, updateMission, missionsText } from './missions.js';
+import { integrationToolDefs, runIntegration } from './integrations.js';
+import { team, rosterText, saveAgent, deleteAgent, agentNote, allowSet, getAgent } from './agents.js';
 import { assertPublicUrl, safeFetch } from './safeurl.js';
 import { saveMemory, searchMemories, forgetMemory } from './memory.js';
 
@@ -110,6 +112,11 @@ const CATALOG = {
   mail: T('mail', 'Почта пользователя (IMAP/SMTP). op: list{unseen=true,limit,since_days} — входящие | search{query} | read{uid} — прочитать письмо | mark{uid,action:read|unread|flag|archive} | send{to,subject,text,reply_to_uid?,confirmed}. uid берётся из list/search. Для отправки без прямой просьбы пользователя нужен confirmed=true после его «да».', { op: S, uid: S, query: S, limit: I, since_days: I, unseen: B, action: S, to: S, subject: S, text: S, reply_to_uid: I, confirmed: B, account: S, folder: S }, ['op']),
   mission_create: T('mission_create', 'Запустить МИССИЮ — долгую цель, над которой ты будешь работать сам по шагам в фоне (поиск вариантов, мониторинг, сбор информации, ведение дела) и отчитаешься, когда готово или нужен ответ пользователя. check_every_minutes — как часто делать шаг (15…10080, по умолчанию 60).', { goal: S, check_every_minutes: I }, ['goal']),
   mission_update: T('mission_update', 'Отчёт по миссии после шага: note — что сделано/следующий шаг/итог/вопрос; status: active | done | blocked.', { id: I, note: S, status: S }, ['id', 'note']),
+  agent_list: T('agent_list', 'Команда агентов пользователя: кто чем занимается, коннекторы, расписание, последний результат.', {}, []),
+  agent_ask: T('agent_ask', 'Поручить задачу агенту из команды (по id или имени). Агент работает со своими инструкциями, памятью и коннекторами и вернёт итог. Не дублируй его работу сам.', { agent: { type: 'string', description: 'id или имя' }, task: S }, ['agent', 'task']),
+  agent_save: T('agent_save', 'Создать агента (без id) или изменить существующего (с id): name, emoji, instructions — его постоянная задача (что делать, как отчитываться), connectors — id коннекторов из списка подключённых, every_minutes — запускать сам по расписанию (≥5), write_ok — разрешить автономные действия, меняющие данные/отправляющие (только если пользователь прямо попросил), enabled.', { id: I, name: S, emoji: S, instructions: S, connectors: { type: 'array', items: S }, every_minutes: I, write_ok: B, enabled: B }, []),
+  agent_delete: T('agent_delete', 'Удалить агента. Только после явного «да» пользователя (confirmed=true).', { id: I, confirmed: B }, ['id']),
+  agent_note: T('agent_note', 'Записать в свою память факт на будущие запуски (что уже обработано, найденные id, договорённости). Коротко.', { note: S }, ['note']),
   mission_list: T('mission_list', 'Список миссий пользователя и их прогресс.', {}, []),
   process: T('process', 'Фоновые процессы bash: list|log|kill.', { action: S, pid: I, lines: I }, ['action']),
 };
@@ -173,8 +180,13 @@ export function toolDefs(user, mode = 'code', o = {}) {
   if (o.voice) for (const k of [...n]) if (!['web_search', 'phone', 'calculate', 'lookup', 'data_query'].includes(k)) n.delete(k);   // звонок: только нужное — короче запрос, быстрее ответ
   if (o.automation) ['ask_user', 'schedule_create', 'schedule_delete', 'schedule_list', 'delegate', 'mission_create', 'mission_list'].forEach((k) => n.delete(k));
   if (!owner) ['bash', 'python', 'process'].forEach((k) => n.delete(k));
+  // агенты и коннекторы
+  const ag = o.agent && !o.agent.is_main ? o.agent : null;
+  if (ag) { add('agent_note'); ['agent_list', 'agent_ask', 'agent_save', 'agent_delete'].forEach((k) => n.delete(k)); }
+  else if (!o.voice && !o.noAgents && (!o.automation || o.agent?.is_main) && (team(user.id).length || /агент|помощник\S* для|ассистент\S* для|команд[аыу] агент/i.test(text))) add('agent_list', 'agent_ask', 'agent_save', 'agent_delete');
   const base = [...n].map((k) => CATALOG[k]).filter(Boolean);
-  return o.voice || o.noMcp ? base : base.concat(mcpToolDefs(user.id));
+  const ints = o.voice || o.noMcp ? [] : integrationToolDefs(user.id, ag ? { allow: allowSet(ag) || null, all: true } : { text, used: o.used });
+  return o.voice || o.noMcp ? base : base.concat(ints, mcpToolDefs(user.id));
 }
 export const ALL_TOOL_NAMES = Object.keys(CATALOG);
 /** Описание инструмента в формате функции Deepgram Voice Agent. */
@@ -312,6 +324,7 @@ const editAlias = (a) => {   // модели называют параметры
 export async function runTool(user, name, args, ctx) {
   try {
     if (name === 'edit_file' || name === 'multi_edit') args = editAlias(args);
+    if (name.startsWith('int_')) return await runIntegration(user, name, args, { signal: ctx.signal, automation: ctx.automation, autonomy: ctx.autonomy, writeOk: ctx.agent?.write_ok, allow: ctx.agent && !ctx.agent.is_main ? allowSet(ctx.agent) : null });
     if (name.startsWith('mcp_')) return maskSecrets(user, await mcpCall(user.id, name, injectSecrets(user, args), ctx.signal));
     if (name === 'bash' || name === 'http_request') { args = injectSecrets(user, args); const out = await runTool0(user, name, args, ctx); return maskSecrets(user, out); }
     return await runTool0(user, name, args, ctx);
@@ -491,6 +504,11 @@ async function runTool0(user, name, args, ctx) {
       case 'delete_site': return deleteSite(user.id, args.name) ? 'Сайт удалён' : 'Не найден';
       case 'todo_write': return 'Список задач обновлён';
       case 'ask_user': ctx.endTurn?.(); return 'Вопрос показан пользователю. Заверши ход и дождись ответа.';
+      case 'agent_list': return rosterText(user.id);
+      case 'agent_ask': return ctx.askAgent ? await ctx.askAgent(String(args.agent || ''), String(args.task || '')) : 'Поручения агентам здесь недоступны';
+      case 'agent_save': { try { const a = saveAgent(user.id, args, args.id ? +args.id : null); return `Агент «${a.name}» ${a.emoji} сохранён (id ${a.id})${a.every_min ? `, запуск каждые ${a.every_min} мин` : ''}. Настроить и открыть чат с ним можно на экране «Агенты».`; } catch (e) { return `Ошибка: ${e.message}`; } }
+      case 'agent_delete': { if (args.confirmed !== true && ctx.autonomy !== 'auto') return 'ОТКАЗАНО: сначала спроси пользователя через ask_user, повтори с confirmed=true после «Да».'; return deleteAgent(user.id, +args.id) ? 'Агент удалён' : 'Агент не найден (главного удалить нельзя)'; }
+      case 'agent_note': return ctx.agent ? agentNote(user.id, ctx.agent.id, args.note) : 'Заметки доступны только отдельному агенту';
       case 'delegate': return ctx.delegate ? await ctx.delegate(String(args.task || '')) : 'Делегирование недоступно';
       case 'skill_load': {
         const r = db.prepare('SELECT content FROM skills WHERE user_id=? AND name=?').get(user.id, String(args.name));

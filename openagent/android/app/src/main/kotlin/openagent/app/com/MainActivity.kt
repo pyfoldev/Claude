@@ -94,6 +94,8 @@ class MainActivity : ComponentActivity() {
                             "Secrets" -> SecretsScreen(vm)
                             "Activity" -> ActivityScreen(vm)
                             "Missions" -> MissionsScreen(vm)
+                            "Agents" -> AgentsScreen(vm)
+                            "Integrations" -> ConnectorsScreen(vm)
                             else -> ChatRoot(vm)
                         }
                     }

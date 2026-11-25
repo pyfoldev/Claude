@@ -16,6 +16,7 @@ import { extractText, DOC_EXT } from './extract.js';
 import { AUDIO_EXT } from './transcribe.js';
 import { pplxAgent } from './perplexity.js';
 import { snapshot, snapshotAsync } from './checkpoints.js';
+import { getAgent, team, agentSystemBlock, recordRun, setAgentStarter, runAgentNow } from './agents.js';
 import { phoneFast, phoneModelEnabled } from './phoneModel.js';
 import { runChatAI, chatEngineOn } from './chatEngine.js';
 import { runOpencode, engineAvailable, OPENDESIGN_DIR } from './opencodeEngine.js';
@@ -56,7 +57,7 @@ const PERSONAS = {
  * Системный промпт: СТАБИЛЬНАЯ часть сначала, изменчивая (дата, резюме, ход работы) в конце.
  * DeepSeek кэширует одинаковое начало запроса (замер: 93% токенов), поэтому префикс не должен меняться между шагами и запросами.
  */
-function systemPrompt(user, ws, summary, voice, mode, cwd, effort, skills, automation, everyMin, persona, digest, project, scenario) {
+function systemPrompt(user, ws, summary, voice, mode, cwd, effort, skills, automation, everyMin, persona, digest, project, scenario, agentBlock) {
   const lines = [
     mode === 'code'
       ? `Ты — OpenAgent (режим CODE): автономный инженер на сервере пользователя${user.role === 'owner' ? ' (bash с root, Android SDK, git, gh)' : ' (без shell)'}. Папка проекта: ${cwd}${project ? ` (проект «${project}»)` : ''}. Файлы пользователя: ${ws}/uploads. GitHub: ${user.github_login || 'не привязан'}.
@@ -76,6 +77,7 @@ function systemPrompt(user, ws, summary, voice, mode, cwd, effort, skills, autom
   { let pr = null; try { pr = user.profile ? JSON.parse(user.profile) : null; } catch {} if (pr) { const bits = [pr.name && `зовут ${pr.name}`, pr.city && `живёт: ${pr.city}`, pr.home && `дом/адрес: ${pr.home}`, pr.job && `занятие: ${pr.job}`, pr.interests && `интересы: ${pr.interests}`, pr.about && `ещё: ${pr.about}`, pr.address && `обращение на «${pr.address}»`, pr.style === 'short' ? 'отвечать кратко' : pr.style === 'detailed' ? 'отвечать подробно' : '', pr.humor === 'joke' ? 'можно шутить' : pr.humor === 'serious' ? 'тон серьёзный' : ''].filter(Boolean); if (bits.length) lines.push('Профиль пользователя (учитывай, не пересказывай без нужды): ' + bits.join('; ') + '.'); } }
   if (scenario || voice) lines.push('АВТОНОМНОСТЬ: ты личный агент, а не анкета. Если пользователь уже сказал, что делать, — делай сразу. Не переспрашивай то, что уже известно из разговора, памяти или контекста; не проси подтверждение того, о чём просили прямо. Недостающее выбирай разумными значениями по умолчанию и сообщай выбор одной фразой. Вопрос — только когда без ответа нельзя действовать (и тогда ровно один, сразу со всем нужным). Подтверждение — только перед необратимым/денежным действием, которое пользователь не заказывал прямо.');
   if (scenario) lines.push(scenario);
+  if (agentBlock) lines.push(agentBlock);
   if (voice) lines.push('ГОЛОС: ответ зачитают вслух — 1–3 коротких предложения, без markdown, списков и ссылок. Без слов «Ответ:» и «Итого:» — сразу суть. Числа и единицы пиши так, как их произносят.');
   if (mode === 'code' && skills.length) lines.push(`Навыки (skill_load): ${skills.slice(0, 15).map((k) => k.name).join(', ')}.`);
   // ---- изменчивое (в конце) ----
@@ -390,13 +392,15 @@ export function startRun(user, conv, text, attachments, opts = {}) {
       ensureSkills(user.id);
       const skills = db.prepare('SELECT name, description FROM skills WHERE user_id=? ORDER BY name').all(user.id);
       const recentUser = db.prepare("SELECT content FROM messages WHERE conv_id=? AND role='user' ORDER BY id DESC LIMIT 3").all(conv.id).map((r) => r.content).join('\n');   // сценарий держится, пока разговор о нём («да», «этот» тоже считаются)
-      const sysFn = (digest) => systemPrompt(user, ws, summary, voice, conv.mode, cwd, effort, skills, automation, opts.everyMin, conv.persona, digest, project?.name, scenarioGuide(recentUser));
+      const agentRow = conv.agent_id ? getAgent(user.id, conv.agent_id) : (opts.agentId ? getAgent(user.id, opts.agentId) : null);
+      const agentBlockText = voice ? '' : agentSystemBlock(user, agentRow, { automation });
+      const sysFn = (digest) => systemPrompt(user, ws, summary, voice, conv.mode, cwd, effort, skills, automation, opts.everyMin, conv.persona, digest, project?.name, scenarioGuide(recentUser), agentBlockText);
       // Набор инструментов только растёт в пределах чата — префикс запроса стабилен (кэш), а «мусорные» сообщения («ок») идут без инструментов
       const LITE = /^(привет|здравствуй\S*|спасибо|благодарю|ок|окей|да|нет|хорошо|понял\S*|ясно|супер|круто|пока|ага|ладно)[!.\s]*$/i;
       const prevTools = conv.tools ? conv.tools.split(',') : [];
       const prevUsed = db.prepare("SELECT DISTINCT tool_name FROM messages WHERE conv_id=? AND role='tool'").all(conv.id).map((r) => r.tool_name);
       if (!voice) await prepareMcp(user.id).catch(() => {});
-      const wanted = toolDefs(user, conv.mode, { automation, text, effort, voice, hasFiles: !!attachments?.length, used: new Set([...prevTools, ...prevUsed]) });
+      const wanted = toolDefs(user, conv.mode, { automation, agent: agentRow, text, effort, voice, hasFiles: !!attachments?.length, used: new Set([...prevTools, ...prevUsed]) });
       const tools = LITE.test((text || '').trim()) && !attachments?.length && !automation ? [] : wanted;
       if (tools.length) db.prepare('UPDATE conversations SET tools=? WHERE id=?').run(tools.map((t) => t.function.name).join(','), conv.id);
       const mkFallbacks = (pv, m) => pv.id === 'river' ? [config.river.fastModel, ...config.river.allowed].filter((x, i, arr) => x !== m && arr.indexOf(x) === i && (!hasImages || config.river.visionModels.includes(x))) : [];
@@ -423,6 +427,27 @@ export function startRun(user, conv, text, attachments, opts = {}) {
         }
         return 'Под-агент не уложился в лимит шагов';
       };
+      const askAgent = async (who, task) => {
+        const list = team(user.id);
+        const ag = list.find((x) => String(x.id) === String(who).trim()) || list.find((x) => x.name.toLowerCase() === String(who).trim().toLowerCase()) || list.find((x) => x.name.toLowerCase().includes(String(who).trim().toLowerCase()));
+        if (!ag) return `Агент «${who}» не найден. В команде: ${list.map((x) => `${x.id} «${x.name}»`).join(', ') || 'никого'}`;
+        const skip = new Set(['agent_ask', 'agent_save', 'agent_delete', 'agent_list', 'delegate', 'ask_user', 'todo_write', 'schedule_create', 'schedule_list', 'schedule_delete']);
+        const subTools = toolDefs(user, 'chat', { automation: true, agent: ag, text: task }).filter((t) => !skip.has(t.function.name));
+        const msgs = [{ role: 'system', content: `Ты — OpenAgent. ${agentSystemBlock(user, ag, { automation: true })}\nВерни итог своей работы кратко и точно (факты, числа, ссылки).` }, { role: 'user', content: task }];
+        let out = 'Агент не уложился в лимит шагов';
+        for (let i = 0; i < 14; i++) {
+          const r = await chatStream({ prov, model, messages: msgs, tools: subTools, signal: ac.signal, maxTokens: 2500, onUsage: (u) => { usageAcc.prompt += u.prompt_tokens || 0; usageAcc.completion += u.completion_tokens || 0; usageAcc.calls++; } });
+          msgs.push({ role: 'assistant', content: r.content || null, ...(r.tool_calls.length ? { tool_calls: r.tool_calls } : {}) });
+          if (!r.tool_calls.length) { out = r.content || '(пусто)'; break; }
+          for (const c of r.tool_calls) {
+            let a = {}; try { a = JSON.parse(c.function.arguments || '{}'); } catch {}
+            const res = await runTool(user, c.function.name, a, { signal: ac.signal, cwd, automation: true, agent: ag, autonomy, attach: () => {} });
+            msgs.push({ role: 'tool', tool_call_id: c.id, content: String(res).slice(0, 6000) });
+          }
+        }
+        recordRun(ag.id, out);
+        return `Ответ агента «${ag.name}»:\n${out}`;
+      };
       const PAR = new Set(['web_search', 'web_fetch', 'read_file', 'list_dir', 'memory_search', 'grep', 'glob', 'http_request', 'delegate']);
       const seen = (run.seen ||= new Map());
       const counters = (run.counters ||= { search: 0, bashRead: 0 });
@@ -437,7 +462,7 @@ export function startRun(user, conv, text, attachments, opts = {}) {
         const files = [];
         if (snapP) await snapP;                                // контрольная точка «до» должна быть готова раньше первого изменения
         const result = await runTool(user, call.function.name, args, {
-          signal: ac.signal, cwd, delegate, automation, autonomy, userText: text, searchProvider: opts.search, phone: (a) => phoneCall(user.id, emit, a), endTurn: () => { ended = true; },
+          signal: ac.signal, cwd, delegate, askAgent, agent: agentRow, automation, autonomy, userText: text, searchProvider: opts.search, phone: (a) => phoneCall(user.id, emit, a), endTurn: () => { ended = true; },
           attach: (f) => files.push(f),
           onOutput: (s) => {
             pending += s;
@@ -581,6 +606,7 @@ ${memBlock}` : '', `Сегодня ${new Date().toISOString().slice(0, 10)}.`,
       emit(aborted ? 'done' : 'error', { error: e.message });
     } finally {
       clearTimeout(slowT);
+      { const aid = opts.agentId || conv.agent_id; if (aid && automation) { try { const m = db.prepare("SELECT content FROM messages WHERE conv_id=? AND role='assistant' AND content!='' ORDER BY id DESC LIMIT 1").get(conv.id); if (m) db.prepare('UPDATE agents SET last_result=? WHERE id=? AND user_id=?').run(m.content.slice(0, 1500), aid, user.id); } catch {} } }
       logUsage(user.id, usageAcc);
       run.done = true;
       runs.delete(conv.id);
@@ -628,3 +654,4 @@ function ensureSkills(uid) {
 export { ensureSkills };
 
 setStarter((user, conv, prompt, opts) => startRun(user, conv, prompt, null, opts || {}));
+setAgentStarter((user, conv, prompt, opts) => startRun(user, conv, prompt, null, opts || {}));

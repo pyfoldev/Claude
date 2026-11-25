@@ -35,6 +35,13 @@ systemctl restart openagent
 3. Перезапускать сервер не нужно. Проверка: `curl -sI https://ваш-сервер/models/phone.gguf` — должен быть `200` и `Content-Length: 444414816`.
 Вместо частей можно положить один файл: `cat phone.gguf.part* > DATA_DIR/models/phone.gguf`. Либо в приложении кнопка «Файл…» — выбрать готовый `phone.gguf`.
 
+## Агенты и коннекторы
+- **Агенты** (приложение: инструменты → «Агенты»): у каждого своя задача, набор коннекторов, память-заметки и расписание (раз в N минут). Чат с агентом, запуск вручную, пауза. Шаблоны: дайджест новостей, секретарь почты, охотник за ценами, дежурный по GitHub, менеджер задач, умный дом и др.
+- **Главный агент** — обычный чат: знает команду агентов, поручает им работу (`agent_ask`), по просьбе создаёт новых (`agent_save`: «заведи агента, который каждое утро собирает новости»).
+- **Коннекторы** (инструменты → «Коннекторы»), 20 штук: Telegram-бот, Slack, Discord, GitHub, GitLab, Notion, Linear, Todoist, Trello, Jira, Airtable, Home Assistant, календарь iCal (Google/Яндекс/Apple), ntfy-пуши, вебхуки (Zapier/Make/n8n), YouTube, Stripe, Vercel, Sentry, SMS Twilio. Ещё тысячи сервисов — через MCP («Подключения»).
+- **Безопасность:** действия, которые меняют данные или что-то отправляют (✎), в чате требуют вашего «да»; автономный агент выполняет их только если включено «Разрешить действия». Токены лежат в базе сервера (`integrations`), клиенту не отдаются.
+- API: `GET/POST/PATCH/DELETE /api/agents`, `POST /api/agents/:id/run|chat`, `GET /api/integrations`, `PUT/DELETE /api/integrations/:id`, `POST /api/integrations/:id/test`. Тесты: `node test/agents.mjs`, `node test/integrations.mjs` (без сети и модели).
+
 ## Что нужно заполнить в `.env`
 - `OWNER_EMAILS` — ваш e-mail (только владелец получает shell на сервере).
 - `RIVER_API_KEY`, `RIVER_BASE_URL`, `RIVER_MODEL`.

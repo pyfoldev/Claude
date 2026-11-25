@@ -25,7 +25,7 @@ import java.io.File
 
 /** Окно помощника поднимает свой экземпляр VM: ему не нужно открывать последний чат. */
 object AssistFlag { @Volatile var on = false }
-enum class Screen { Chat, Voice, Settings, Memory, Automations, Skills, Files, Terminal, Sites, Bookmarks, Server, Git, Projects, Prompts, Connections, Notes, Tasks, Secrets, Activity, Missions }
+enum class Screen { Agents, Integrations, Chat, Voice, Settings, Memory, Automations, Skills, Files, Terminal, Sites, Bookmarks, Server, Git, Projects, Prompts, Connections, Notes, Tasks, Secrets, Activity, Missions }
 enum class VoiceState { Idle, Listening, Thinking, Speaking }
 
 /** runCatching, который не глотает отмену корутины (иначе остановка звонка не останавливает прослушивание). */
@@ -1214,6 +1214,30 @@ class AppVM(app: Application) : AndroidViewModel(app) {
     var callScreen by mutableStateOf(store.callScreen); var callDelay by mutableStateOf(store.callDelay)
     fun updCallScreen(v: Boolean) { callScreen = v; store.callScreen = v; val c = getApplication<Application>(); if (v) CallScreenService.start(c) else CallScreenService.stop(c) }
     fun updCallDelay(v: Int) { callDelay = v; store.callDelay = v }
+    // ---------- агенты и коннекторы ----------
+    val agents = mutableStateListOf<AgentItem>()
+    var agentTemplates by mutableStateOf(listOf<AgentTemplate>())
+    var agentConns by mutableStateOf(listOf<ConnBrief>())
+    val connectors = mutableStateListOf<Connector>()
+    fun loadAgents() = viewModelScope.launch { runCatching { api.agents() }.onSuccess { agents.clear(); agents.addAll(it.agents); agentTemplates = it.templates; agentConns = it.connectors }.onFailure(::err) }
+    fun saveAgent(id: Int?, name: String, emoji: String, instr: String, conns: List<String>, every: Int?, writeOk: Boolean, enabled: Boolean = true) = viewModelScope.launch {
+        runCatching { api.saveAgent(id, name, emoji, instr, conns, every, writeOk, enabled) }.onFailure(::err); loadAgents().join()
+    }
+    fun setAgentEnabled(a: AgentItem, on: Boolean) = viewModelScope.launch { runCatching { api.setAgentEnabled(a.id, on) }.onFailure(::err); loadAgents().join() }
+    fun deleteAgent(a: AgentItem) = viewModelScope.launch { runCatching { api.deleteAgent(a.id) }.onFailure(::err); loadAgents().join() }
+    fun runAgent(a: AgentItem) = viewModelScope.launch {
+        runCatching { api.runAgent(a.id) }.onSuccess { r -> toast = "Агент «${a.name}» запущен"; refreshConvs(); r.convId?.let { openChat(it) } }.onFailure(::err)
+    }
+    fun chatWithAgent(a: AgentItem) = viewModelScope.launch {
+        runCatching { api.agentChat(a.id) }.onSuccess { c -> refreshConvs(); openChat(c.id) }.onFailure(::err)
+    }
+    fun loadConnectors() = viewModelScope.launch { runCatching { api.integrations() }.onSuccess { connectors.clear(); connectors.addAll(it) }.onFailure(::err) }
+    fun saveConnector(c: Connector, fields: Map<String, String>, test: Boolean) = viewModelScope.launch {
+        runCatching { api.saveIntegration(c.id, fields) }.onFailure { err(it); return@launch }
+        loadConnectors().join()
+        if (test) runCatching { api.testIntegration(c.id) }.onSuccess { toast = it.result.take(200) }.onFailure(::err) else toast = "Сохранено"
+    }
+    fun removeConnector(c: Connector) = viewModelScope.launch { runCatching { api.removeIntegration(c.id) }.onFailure(::err); loadConnectors().join() }
     val missions = mutableStateListOf<MissionItem>()
     fun loadMissions() = viewModelScope.launch { runCatching { api.missions() }.onSuccess { missions.clear(); missions.addAll(it) }.onFailure(::err) }
     fun setMission(m: MissionItem, status: String) = viewModelScope.launch { runCatching { api.setMission(m.id, status) }.onFailure(::err); loadMissions().join() }

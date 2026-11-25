@@ -15,6 +15,15 @@ import java.util.concurrent.TimeUnit
 @Serializable data class AuthConfig(val captchaUrl: String? = null, val googleClientId: String? = null, val githubDeviceFlow: Boolean = false)
 @Serializable data class User(val id: Int, val email: String, val name: String? = null, val role: String = "user", val github: String? = null)
 @Serializable data class AuthResp(val token: String, val user: User)
+@Serializable data class AgentItem(val id: Int, val name: String, val emoji: String = "🤖", val instructions: String = "", val isMain: Boolean = false, val connectors: List<String>? = null, val writeOk: Boolean = false, val everyMin: Int? = null, val nextRun: Long? = null, val enabled: Boolean = true, val notes: String = "", val lastRun: Long? = null, val runs: Int = 0, val lastResult: String = "")
+@Serializable data class AgentTemplate(val name: String, val emoji: String = "🤖", val instructions: String = "", val connectors: List<String> = emptyList(), val everyMin: Int? = null)
+@Serializable data class ConnBrief(val id: String, val name: String, val icon: String = "", val connected: Boolean = false)
+@Serializable data class AgentsResp(val agents: List<AgentItem> = emptyList(), val templates: List<AgentTemplate> = emptyList(), val connectors: List<ConnBrief> = emptyList())
+@Serializable data class ConnField(val k: String, val label: String, val secret: Boolean = false, val hint: String = "", val value: String = "", val opt: Boolean = false)
+@Serializable data class ConnAction(val name: String, val desc: String = "", val write: Boolean = false)
+@Serializable data class Connector(val id: String, val name: String, val icon: String = "", val desc: String = "", val connected: Boolean = false, val fields: List<ConnField> = emptyList(), val actions: List<ConnAction> = emptyList())
+@Serializable data class AgentRun(val ok: Boolean = false, val convId: Int? = null)
+@Serializable data class TestResult(val result: String = "")
 @Serializable data class Conv(val id: Int, val title: String, val mode: String = "chat", val pinned: Boolean = false, val persona: String = "", val projectId: Int? = null, val updatedAt: Long = 0, val running: Boolean = false)
 @Serializable data class ToolCall(val id: String, val name: String, val args: String = "")
 @Serializable data class Attach(val id: String, val name: String, val mime: String = "", val size: Long = 0, val caption: String? = null)
@@ -404,6 +413,22 @@ class Api(private val store: Store) {
     }
     suspend fun profile(): Profile = get("/api/profile")
     suspend fun saveProfile(p: Profile) { exec(req("/api/profile").post(jsonBody("name" to p.name, "city" to p.city, "home" to p.home, "job" to p.job, "interests" to p.interests, "about" to p.about, "style" to p.style, "address" to p.address, "humor" to p.humor)).build()) }
+    suspend fun agents(): AgentsResp = get("/api/agents")
+    suspend fun saveAgent(id: Int?, name: String, emoji: String, instructions: String, connectors: List<String>, everyMin: Int?, writeOk: Boolean, enabled: Boolean): AgentItem {
+        val b = jsonBody("name" to name, "emoji" to emoji, "instructions" to instructions, "connectors" to connectors, "everyMin" to (everyMin ?: 0), "writeOk" to writeOk, "enabled" to enabled)
+        return JSON.decodeFromString(exec(if (id == null) req("/api/agents").post(b).build() else req("/api/agents/$id").patch(b).build()))
+    }
+    suspend fun setAgentEnabled(id: Int, on: Boolean) { exec(req("/api/agents/$id").patch(jsonBody("enabled" to on)).build()) }
+    suspend fun deleteAgent(id: Int) { exec(req("/api/agents/$id").delete().build()) }
+    suspend fun runAgent(id: Int): AgentRun = post("/api/agents/$id/run")
+    suspend fun agentChat(id: Int): Conv = post("/api/agents/$id/chat")
+    suspend fun integrations(): List<Connector> = get("/api/integrations")
+    suspend fun saveIntegration(id: String, fields: Map<String, String>) {
+        val b = buildJsonObject { putJsonObject("fields") { fields.forEach { (k, v) -> put(k, v) } } }.toString().toRequestBody(jsonType)
+        exec(req("/api/integrations/$id").put(b).build())
+    }
+    suspend fun removeIntegration(id: String) { exec(req("/api/integrations/$id").delete().build()) }
+    suspend fun testIntegration(id: String): TestResult = post("/api/integrations/$id/test")
     suspend fun missions(): List<MissionItem> = get("/api/missions")
     suspend fun setMission(id: Int, status: String) { exec(req("/api/missions/$id").patch(jsonBody("status" to status)).build()) }
     suspend fun deleteMission(id: Int) { exec(req("/api/missions/$id").delete().build()) }

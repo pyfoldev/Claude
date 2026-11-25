@@ -6,6 +6,7 @@ import { config, SERVER_V } from './config.js';
 import { authRouter } from './auth.js';
 import { api } from './routes.js';
 import { startScheduler } from './scheduler.js';
+import { startAgentScheduler } from './agents.js';
 import { mountSites } from './sites.js';
 import { mountShare } from './extras.js';
 import { attachWs } from './sttStream.js';
@@ -40,7 +41,7 @@ app.get('/models/phone.gguf', (req, res) => {
   }
   res.status(404).json({ error: 'phone.gguf не найден: положите файл в DATA_DIR/models/ или папку dist/phone-gguf с частями' });
 });
-app.get('/health', (_req, res) => res.json({ ok: true, v: SERVER_V, features: [...(gigaamUp() ? ['stt-gigaam'] : []), 'stt-stream', 'tts-stream', 'phone', 'docs', 'diag', 'bridge', 'pplx', 'tts-pcm', 'mcp', 'notes', 'todos', 'secrets', 'share', 'compare', 'export', 'watch', 'lookup', 'voice-agent'] }));
+app.get('/health', (_req, res) => res.json({ ok: true, v: SERVER_V, features: [...(gigaamUp() ? ['stt-gigaam'] : []), 'stt-stream', 'tts-stream', 'phone', 'docs', 'diag', 'bridge', 'pplx', 'tts-pcm', 'mcp', 'notes', 'todos', 'secrets', 'share', 'compare', 'export', 'watch', 'lookup', 'voice-agent', 'agents', 'integrations'] }));
 mountSites(app);
 mountShare(app);
 // Вебхуки автоматизаций: POST /hooks/<token> — запускает задачу агента (токен = секрет в ссылке)
@@ -60,6 +61,7 @@ app.use('/api', api);
 app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: err.message }); });
 
 startScheduler();
+startAgentScheduler();
 gigaamUp();   // прогрев проверки доступности GigaAM (дальше кэшируется)
 const server = app.listen(config.port, () => console.log(`OpenAgent server on :${config.port}`));
 attachWs(server);

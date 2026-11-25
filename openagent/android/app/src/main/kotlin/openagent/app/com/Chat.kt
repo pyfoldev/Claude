@@ -205,6 +205,8 @@ fun ToolsSheet(vm: AppVM, onDismiss: () -> Unit, close: () -> Unit) {
         add(Triple(Icons.Outlined.StickyNote2, "Заметки") { vm.screen = Screen.Notes })
         add(Triple(Icons.Outlined.TaskAlt, "Задачи") { vm.screen = Screen.Tasks })
         add(Triple(Icons.Outlined.Flag, "Миссии") { vm.screen = Screen.Missions })
+        add(Triple(Icons.Outlined.Groups, "Агенты") { vm.screen = Screen.Agents })
+        add(Triple(Icons.Outlined.Hub, "Коннекторы") { vm.screen = Screen.Integrations })
         add(Triple(Icons.Outlined.History, "Журнал агента") { vm.screen = Screen.Activity })
         add(Triple(Icons.Outlined.Key, "Секреты") { vm.screen = Screen.Secrets })
         add(Triple(Icons.Outlined.Compare, "Сравнить модели") { vm.compareOut.clear(); vm.showCompare = true })
