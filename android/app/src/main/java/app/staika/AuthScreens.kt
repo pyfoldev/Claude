@@ -31,7 +31,6 @@ private fun Floaty(pal: Pal, size: Int, x: Float, y: Float, phase: Int, rot: Flo
         Avatar(
             pal, size.dp,
             Modifier.offset(x = maxWidth * x - (size / 2).dp, y = maxHeight * y + dy.dp).rotate(rot),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(size.dp * 0.32f),
         )
     }
 }
@@ -39,11 +38,11 @@ private fun Floaty(pal: Pal, size: Int, x: Float, y: Float, phase: Int, rot: Flo
 @Composable
 fun WelcomeScreen(onLogin: () -> Unit, onSignUp: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.White)) {
-        Floaty(Pal.Cloud, 84, 0.22f, 0.10f, 0, -6f)
-        Floaty(Pal.Star, 76, 0.78f, 0.20f, 1, 8f)
-        Floaty(Pal.Fire, 70, 0.10f, 0.52f, 2, -10f)
-        Floaty(Pal.Jelly, 88, 0.86f, 0.55f, 3, 6f)
-        Floaty(Pal.Bunny, 74, 0.52f, 0.69f, 4, -4f)
+        Floaty(Pal.Green, 84, 0.22f, 0.10f, 0, -6f)
+        Floaty(Pal.Yellow, 76, 0.78f, 0.20f, 1, 8f)
+        Floaty(Pal.Pink, 70, 0.10f, 0.52f, 2, -10f)
+        Floaty(Pal.Blue, 88, 0.86f, 0.55f, 3, 6f)
+        Floaty(Pal.Orange, 74, 0.52f, 0.69f, 4, -4f)
         Column(
             Modifier.fillMaxSize().padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

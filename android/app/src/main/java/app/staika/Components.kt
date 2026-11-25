@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun Avatar(
     pal: Pal, size: Dp, modifier: Modifier = Modifier,
-    chief: Boolean = false, status: Status? = null, shape: androidx.compose.ui.graphics.Shape = CircleShape,
+    chief: Boolean = false, status: Status? = null,
 ) {
     val breathe = rememberInfiniteTransition(label = "breathe")
     val k by breathe.animateFloat(
@@ -42,8 +42,8 @@ fun Avatar(
     Box(modifier.size(size)) {
         Image(
             painterResource(pal.img), null,
-            Modifier.fillMaxSize().scale(sc).clip(shape).background(C.Tile),
-            contentScale = ContentScale.Crop,
+            Modifier.fillMaxSize().scale(sc),
+            contentScale = ContentScale.Fit,
         )
         if (chief) {
             Box(
