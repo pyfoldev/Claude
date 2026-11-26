@@ -213,9 +213,16 @@ fun TodoCard(argsJson: String) {
 @Composable
 fun AskCard(argsJson: String, enabled: Boolean, onPick: (String) -> Unit) {
     val o = remember(argsJson) { runCatching { JSON.parseToJsonElement(argsJson).jsonObject }.getOrNull() }
-    val q = o?.get("question")?.jsonPrimitive?.contentOrNull.orEmpty()
-    val opts = o?.get("options")?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
-    val type = o?.get("type")?.jsonPrimitive?.contentOrNull ?: if (opts.isEmpty()) "text" else "single"
+    // модель иногда шлёт варианты объектами ({"label":…}) или вопрос не строкой — не падаем, берём текст как получится
+    fun txt(e: kotlinx.serialization.json.JsonElement?): String = when (e) {
+        null -> ""
+        is kotlinx.serialization.json.JsonPrimitive -> e.content
+        is kotlinx.serialization.json.JsonObject -> listOf("label", "title", "text", "name", "value", "option").firstNotNullOfOrNull { k -> (e[k] as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: e.values.firstNotNullOfOrNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: ""
+        is kotlinx.serialization.json.JsonArray -> e.joinToString(", ") { txt(it) }
+    }
+    val q = txt(o?.get("question"))
+    val opts = (o?.get("options") as? kotlinx.serialization.json.JsonArray)?.map { txt(it) }?.filter { it.isNotBlank() }.orEmpty()
+    val type = (o?.get("type") as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull ?: if (opts.isEmpty()) "text" else "single"
     val picked = remember { mutableStateListOf<String>() }
     var free by remember { mutableStateOf("") }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(C.surface2).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
