@@ -16,6 +16,7 @@ ENDPOINT="${ENDPOINT:-$(curl -4 -fsS --max-time 8 https://api.ipify.org || true)
 
 install -d -m 700 /etc/veil /etc/wireguard
 install -m 755 "$(dirname "$0")/vpnctl" /usr/local/bin/vpnctl
+install -m 755 "$(dirname "$0")/veil-adblock" /usr/local/bin/veil-adblock
 
 if [ ! -f /etc/wireguard/wg0.conf ]; then
   umask 077
@@ -68,9 +69,33 @@ server:
     log-replies: no
     use-syslog: no
     logfile: ""
+    include: /etc/unbound/veil-blocklist.conf
 EOF
+[ -f /etc/unbound/veil-blocklist.conf ] || : > /etc/unbound/veil-blocklist.conf
 systemctl enable --now unbound >/dev/null 2>&1 || true
 systemctl restart unbound || true
+
+# Блокировщик рекламы и трекеров (DNS), обновление раз в неделю
+cat > /etc/systemd/system/veil-adblock.service <<EOF
+[Unit]
+Description=Update Veil ad/tracker blocklist
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/veil-adblock update
+EOF
+cat > /etc/systemd/system/veil-adblock.timer <<EOF
+[Unit]
+Description=Weekly Veil blocklist update
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now veil-adblock.timer >/dev/null 2>&1 || true
+/usr/local/bin/veil-adblock update || echo "Блоклист не загружен, повторите: sudo veil-adblock update"
 
 # Без логов
 systemctl disable --now systemd-journald-audit.socket >/dev/null 2>&1 || true

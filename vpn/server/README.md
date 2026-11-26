@@ -13,3 +13,7 @@ sudo vpnctl add phone         # выдаст ссылку vpn://… и QR
 `vpnctl list | show <имя> | remove <имя>` — управление клиентами.
 
 Приватность: нет логов подключений, DNS-запросы обрабатываются на вашем сервере, у каждого клиента свои ключи + preshared key, IPv6 заблокирован на клиенте (нет утечек).
+
+## Блокировщик рекламы и трекеров
+Работает на уровне DNS сервера (список StevenBlack, ~80 тыс. доменов), действует для всех клиентов и приложений, обновляется раз в неделю.
+`sudo veil-adblock update` — обновить сейчас · `sudo veil-adblock off` — выключить · `sudo systemctl enable --now veil-adblock.timer` + `veil-adblock update` — включить снова.

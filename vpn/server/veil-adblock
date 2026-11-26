@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Обновляет DNS-блоклист рекламы и трекеров для unbound. Запуск: veil-adblock [update|off]"""
+import os, re, subprocess, sys, urllib.request
+
+OUT = os.environ.get("VEIL_BLOCKLIST", "/etc/unbound/veil-blocklist.conf")
+URL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+SKIP = {"localhost", "localhost.localdomain", "local", "broadcasthost", "ip6-localhost", "ip6-loopback", "0.0.0.0"}
+DOM = re.compile(r"^(?=.{4,253}$)([a-z0-9_-]+\.)+[a-z]{2,}$")
+
+def write(text):
+    tmp = OUT + ".tmp"
+    open(tmp, "w").write(text)
+    os.replace(tmp, OUT)
+
+def reload():
+    if os.environ.get("VEIL_NORELOAD"): return
+    r = subprocess.run(["unbound-checkconf"], capture_output=True, text=True)
+    if r.returncode: sys.exit("unbound-checkconf: " + r.stderr)
+    subprocess.run(["systemctl", "reload-or-restart", "unbound"], check=True)
+
+def update():
+    data = urllib.request.urlopen(URL, timeout=60).read().decode("utf-8", "ignore")
+    doms = set()
+    for line in data.splitlines():
+        line = line.split("#", 1)[0].split()
+        if len(line) >= 2 and line[0] in ("0.0.0.0", "127.0.0.1"):
+            d = line[1].lower()
+            if d not in SKIP and DOM.match(d): doms.add(d)
+    if len(doms) < 1000: sys.exit("Список подозрительно мал, не применяю")
+    old = open(OUT).read() if os.path.exists(OUT) else ""
+    write("".join(f'local-zone: "{d}." always_null\n' for d in sorted(doms)))
+    try: reload()
+    except BaseException:
+        write(old); raise
+    print(f"Заблокировано доменов: {len(doms)}")
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "update"
+    if cmd == "off":
+        subprocess.run(["systemctl", "disable", "--now", "veil-adblock.timer"], capture_output=True)
+        write(""); reload(); print("Блокировщик выключен")
+    else: update()
