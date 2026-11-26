@@ -42,6 +42,14 @@ systemctl restart openagent
 - **Безопасность:** действия, которые меняют данные или что-то отправляют (✎), в чате требуют вашего «да»; автономный агент выполняет их только если включено «Разрешить действия». Токены лежат в базе сервера (`integrations`), клиенту не отдаются.
 - API: `GET/POST/PATCH/DELETE /api/agents`, `POST /api/agents/:id/run|chat`, `GET /api/integrations`, `PUT/DELETE /api/integrations/:id`, `POST /api/integrations/:id/test`. Тесты: `node test/agents.mjs`, `node test/integrations.mjs` (без сети и модели).
 
+## Обновление из GitHub без архивов
+Сервер и ваши боты обновляются сами из репозитория: я (Claude) пушу в ветку, сервер забирает.
+1. **Один раз на сервере:** `DEPLOY_REPO=https://github.com/pyfoldev/Claude.git DEPLOY_BRANCH=ccr-a3a4ce88-j9zjtg DEPLOY_TOKEN=github_pat_… bash deploy/install-autoupdate.sh`. Токен — fine-grained, только «Contents: Read-only» на этот репозиторий.
+2. **Что куда ставить** — `/etc/openagent/targets.conf` (по умолчанию сервер OpenAgent; свои боты добавьте строкой: имя @@ папка в репозитории @@ куда @@ проверка @@ зависимости @@ перезапуск @@ health). Примеры — `deploy/targets.conf.example`.
+3. **Как работает:** таймер раз в 3 минуты (и мгновенно по вебхуку GitHub `/hooks/deploy`) запускает `openagent-update`: берёт ветку → проверяет новый код → делает снимок → заменяет файлы (`.env`, `data/`, `workspaces/` не трогает) → перезапускает → проверяет `health` → при сбое **откатывает**. Итог и заметки к выпуску — в `/var/lib/openagent-deploy/last-update.txt`.
+4. **Через агента:** скажите ему «обнови» — навык `server-update` запустит `openagent-update`, прочитает `deploy/RELEASE.md` (я пишу туда, что сделать руками) и отчитается.
+5. Команды: `openagent-update --check` (что изменилось), `--status`, `--force`, `--target имя`. Тесты: `node server/test/deployhook.mjs`.
+
 ## Что нужно заполнить в `.env`
 - `OWNER_EMAILS` — ваш e-mail (только владелец получает shell на сервере).
 - `RIVER_API_KEY`, `RIVER_BASE_URL`, `RIVER_MODEL`.

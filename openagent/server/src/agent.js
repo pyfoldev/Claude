@@ -645,10 +645,14 @@ const DEFAULT_SKILLS = [
   ['android-apk', 'Сборка Android APK на сервере', 'Сборка APK: 1) git clone репозиторий; 2) убедись, что ANDROID_HOME=/opt/android-sdk, JDK 17; 3) в корне проекта: echo "sdk.dir=$ANDROID_HOME" > local.properties; 4) ./gradlew assembleDebug --no-daemon (timeout 1800, лучше background=true и tail лога); 5) APK в app/build/outputs/apk/debug/; 6) отправь send_file. При ошибке лицензий: yes | sdkmanager --licenses.'],
   ['github-pr', 'Создание ветки, коммита и Pull Request', 'Работа с GitHub: git checkout -b feature/...; правки; git add -A && git commit -m "..."; git push -u origin HEAD (токен подставляется автоматически); PR через github_api POST /repos/OWNER/REPO/pulls {title, head, base, body}. Не пушь в main без просьбы.'],
   ['server-health', 'Диагностика состояния сервера', 'Проверь: uptime; free -h; df -h; ss -tlnp; systemctl --failed; journalctl -p err -n 30 --no-pager; docker ps (если есть). Дай краткий вывод и рекомендации.'],
+  ['server-update', 'Обновить сервер и ботов из GitHub (без архивов)', 'Обновление из GitHub одной командой. 1) bash: openagent-update --check — покажет, что изменилось (без изменений на сервере). 2) Если есть обновления и пользователь просил обновить — openagent-update (проверка кода → снимок → замена файлов → перезапуск → проверка health → автоматический откат при сбое; .env, data и workspaces не трогаются). 3) Прочитай итог: cat /var/lib/openagent-deploy/last-update.txt — там список коммитов и заметки к выпуску (RELEASE.md): если там сказано добавить ключи в .env — сделай это только после согласия пользователя (ask_user). 4) Коротко отчитайся: что обновлено, версия (curl -s http://127.0.0.1:8787/health), были ли откаты. Свои боты/проекты описаны в /etc/openagent/targets.conf (формат внутри) — новые добавляй туда по просьбе. Статус: openagent-update --status. Журнал: tail -50 /var/log/openagent-deploy.log. Если команды openagent-update нет — установка: bash /opt/openagent/../openagent-src/deploy/install-autoupdate.sh (нужны DEPLOY_REPO, DEPLOY_BRANCH, DEPLOY_TOKEN) — спроси токен у пользователя.'],
   ['code-review', 'Ревью изменений в репозитории', 'git diff / git log -p -n 3; ищи баги, гонки, утечки, пропущенные проверки, небезопасный ввод; для каждого замечания укажи файл:строку и исправление. Запусти тесты/линтер, если они есть.'],
 ];
 function ensureSkills(uid) {
-  if (db.prepare('SELECT 1 FROM skills WHERE user_id=? LIMIT 1').get(uid)) return;
+  if (db.prepare('SELECT 1 FROM skills WHERE user_id=? LIMIT 1').get(uid)) {   // у существующих пользователей добавляем новые встроенные навыки
+    const su = DEFAULT_SKILLS.find((x) => x[0] === 'server-update'); if (su && !db.prepare('SELECT 1 FROM skills WHERE user_id=? AND name=?').get(uid, su[0])) db.prepare('INSERT OR IGNORE INTO skills(user_id,name,description,content) VALUES (?,?,?,?)').run(uid, su[0], su[1], su[2]);
+    return;
+  }
   for (const [n, d, c] of DEFAULT_SKILLS) db.prepare('INSERT OR IGNORE INTO skills(user_id,name,description,content) VALUES (?,?,?,?)').run(uid, n, d, c);
 }
 export { ensureSkills };

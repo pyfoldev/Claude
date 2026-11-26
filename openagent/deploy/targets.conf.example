@@ -1,0 +1,8 @@
+# Что и куда обновлять из репозитория. Поля через « @@ »:
+#   имя @@ папка в репозитории @@ куда ставить @@ проверка нового кода (до замены) @@ подготовка (зависимости) @@ перезапуск @@ адрес health (необязательно)
+# Строки с # — комментарии. Файлы .env, data/, workspaces/, node_modules/ при замене не трогаются; свои исключения — в файле .deployignore внутри целевой папки.
+openagent @@ openagent/server @@ /opt/openagent @@ for f in src/*.js; do node --check "$f" || exit 1; done @@ npm install --omit=dev --no-audit --no-fund @@ systemctl restart openagent @@ http://127.0.0.1:8787/health
+# Пример бота (раскомментируйте и поправьте):
+# mybot @@ bots/mybot @@ /srv/bots/mybot @@ node --check index.js @@ npm ci --omit=dev @@ systemctl restart mybot @@
+# Пример Python-бота:
+# pybot @@ bots/pybot @@ /srv/bots/pybot @@ python3 -m py_compile bot.py @@ pip3 install -q -r requirements.txt @@ systemctl restart pybot @@

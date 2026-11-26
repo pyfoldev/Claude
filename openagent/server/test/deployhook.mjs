@@ -1,0 +1,17 @@
+import crypto from 'node:crypto';
+import { deployHook, verifySignature } from '../src/deployHook.js';
+let fail = 0; const ok = (n, c) => { console.log(`${c ? 'PASS' : 'FAIL'} ${n}`); if (!c) fail++; };
+const secret = 's3cret'; const sign = (b) => 'sha256=' + crypto.createHmac('sha256', secret).update(b).digest('hex');
+const mk = (hdr, body) => ({ body: Buffer.from(body), get: (k) => hdr[k.toLowerCase()] });
+const res = () => { const r = { code: 200, json(o) { r.out = o; return r; }, status(c) { r.code = c; return r; } }; return r; };
+let started = 0; const h = deployHook({ DEPLOY_WEBHOOK_SECRET: secret, DEPLOY_BRANCH: 'br' }, () => { started++; });
+const push = JSON.stringify({ ref: 'refs/heads/br' });
+let r = res(); h(mk({ 'x-hub-signature-256': sign(push), 'x-github-event': 'push' }, push), r); ok('верная подпись и ветка — запуск', r.code === 202 && started === 1);
+r = res(); h(mk({ 'x-hub-signature-256': 'sha256=' + '0'.repeat(64), 'x-github-event': 'push' }, push), r); ok('неверная подпись — 401', r.code === 401 && started === 1);
+r = res(); h(mk({ 'x-github-event': 'push' }, push), r); ok('без подписи — 401', r.code === 401);
+const other = JSON.stringify({ ref: 'refs/heads/main' }); r = res(); h(mk({ 'x-hub-signature-256': sign(other), 'x-github-event': 'push' }, other), r); ok('другая ветка — игнор', r.out?.ignored && started === 1);
+r = res(); h(mk({ 'x-hub-signature-256': sign('{}'), 'x-github-event': 'ping' }, '{}'), r); ok('ping — pong', r.out?.pong === true);
+r = res(); h(mk({ 'x-hub-signature-256': sign(push), 'x-github-event': 'push' }, push), r); ok('повтор раньше 15 с — не запускает', started === 1 && r.code === 202 && r.out.queued === false);
+r = res(); deployHook({}, () => {})(mk({}, push), r); ok('без секрета в .env — 404', r.code === 404);
+ok('verifySignature без заголовка', verifySignature(secret, Buffer.from('x'), undefined) === false);
+process.exit(fail ? 1 : 0);

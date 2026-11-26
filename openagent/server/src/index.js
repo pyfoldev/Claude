@@ -8,6 +8,7 @@ import { api } from './routes.js';
 import { startScheduler } from './scheduler.js';
 import { startAgentScheduler } from './agents.js';
 import { googleCallback } from './googleOAuth.js';
+import { deployHook } from './deployHook.js';
 import { mountSites } from './sites.js';
 import { mountShare } from './extras.js';
 import { attachWs } from './sttStream.js';
@@ -45,6 +46,8 @@ app.get('/models/phone.gguf', (req, res) => {
 app.get('/health', (_req, res) => res.json({ ok: true, v: SERVER_V, features: [...(gigaamUp() ? ['stt-gigaam'] : []), 'stt-stream', 'tts-stream', 'phone', 'docs', 'diag', 'bridge', 'pplx', 'tts-pcm', 'mcp', 'notes', 'todos', 'secrets', 'share', 'compare', 'export', 'watch', 'lookup', 'voice-agent', 'agents', 'integrations'] }));
 mountSites(app);
 mountShare(app);
+// Мгновенное обновление из GitHub (push в ветку) — см. deploy/install-autoupdate.sh
+app.post('/hooks/deploy', express.raw({ type: '*/*', limit: '2mb' }), deployHook());
 // Вебхуки автоматизаций: POST /hooks/<token> — запускает задачу агента (токен = секрет в ссылке)
 const hookHits = new Map();
 app.post('/hooks/:token', express.text({ type: '*/*', limit: '200kb' }), async (req, res) => {
