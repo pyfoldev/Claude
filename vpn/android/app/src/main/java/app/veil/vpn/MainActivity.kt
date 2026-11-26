@@ -1,26 +1,25 @@
 package app.veil.vpn
 
 import android.app.Activity
-import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
@@ -28,41 +27,25 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wireguard.android.backend.GoBackend
 import com.wireguard.android.backend.Tunnel
 
-private val Bg = Color(0xFF0B0F1A)
-private val Surface = Color(0xFF131A2B)
-private val Accent = Color(0xFF3DDC97)
-private val Blue = Color(0xFF4C7DFF)
-private val Muted = Color(0xFF7C88A6)
-private val Danger = Color(0xFFFF5C6C)
+private val Muted = Color(0xFF8A8A8A)
+private val Danger = Color(0xFFE5656F)
+private val Card = Color(0xCC0E0E0E)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Vpn.init(this)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = Accent, background = Bg, surface = Surface)) {
+            MaterialTheme(colorScheme = darkColorScheme(primary = Color.White, background = Color.Black, surface = Color(0xFF111111))) {
                 Home()
             }
         }
     }
-}
-
-private fun fmtBytes(b: Long): String = when {
-    b < 1024 -> "$b Б"
-    b < 1024 * 1024 -> "%.1f КБ".format(b / 1024.0)
-    b < 1024L * 1024 * 1024 -> "%.1f МБ".format(b / 1048576.0)
-    else -> "%.2f ГБ".format(b / 1073741824.0)
-}
-
-private fun fmtTime(ms: Long): String {
-    val s = ms / 1000
-    return "%02d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60)
 }
 
 @Composable
@@ -71,12 +54,11 @@ fun Home() {
     val state by Vpn.state.collectAsState()
     val busy by Vpn.busy.collectAsState()
     val error by Vpn.error.collectAsState()
-    val rx by Vpn.rx.collectAsState()
-    val tx by Vpn.tx.collectAsState()
-    val since by Vpn.since.collectAsState()
     val endpoint by Vpn.endpoint.collectAsState()
     var showImport by remember { mutableStateOf(false) }
     val up = state == Tunnel.State.UP
+
+    LaunchedEffect(up) { FxLevel.level = if (up) 0.25f else 0f }
 
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == Activity.RESULT_OK) Vpn.connect()
@@ -90,60 +72,37 @@ fun Home() {
         }
     }
 
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(up) { while (up) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) } }
-
-    Box(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Bg, Color(0xFF101830))))
-            .systemBarsPadding().padding(horizontal = 24.dp)
-    ) {
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Veil", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                    Text("WireGuard · без логов", color = Muted, fontSize = 13.sp)
-                }
-                TextButton(onClick = { showImport = true }) { Text("Сервер", color = Accent) }
-            }
-
-            Spacer(Modifier.weight(1f))
-            PowerButton(up = up, busy = busy, onClick = { if (!busy) toggle() })
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Backdrop()
+        Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
             Spacer(Modifier.height(28.dp))
-            Text(
-                when { busy -> "Подождите…"; up -> "Защищено"; else -> "Не защищено" },
-                color = if (up) Accent else Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(50)).border(BorderStroke(1.dp, Color(0x66FFFFFF)), RoundedCornerShape(50))
+                        .padding(horizontal = 16.dp, vertical = 7.dp)
+                ) { Text(if (up) "ON" else "OFF", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+                Spacer(Modifier.weight(1f))
+                PowerButton(up = up, busy = busy, onClick = { if (!busy) toggle() })
+            }
+            Spacer(Modifier.height(36.dp))
+            Text("Amsterdam", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
             Text(
-                error ?: if (endpoint == null) "Добавьте сервер, чтобы начать" else if (up) "Весь трафик идёт через ваш сервер" else "Нажмите, чтобы подключиться",
-                color = if (error != null) Danger else Muted, fontSize = 14.sp, textAlign = TextAlign.Center
+                error ?: endpoint?.substringBeforeLast(":") ?: "—",
+                color = if (error != null) Danger else Muted, fontSize = 16.sp
             )
-            Spacer(Modifier.weight(1f))
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Stat("Загрузка", fmtBytes(rx), Blue, Modifier.weight(1f))
-                Stat("Отдача", fmtBytes(tx), Accent, Modifier.weight(1f))
-                Stat("Время", if (up && since > 0) fmtTime(now - since) else "--:--:--", Color.White, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(40.dp))
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Surface)
-                    .clickable { showImport = true }.padding(16.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card)
+                    .border(BorderStroke(1.dp, Color(0x22FFFFFF)), RoundedCornerShape(18.dp))
+                    .clickable { showImport = true }.padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(if (up) Accent else Muted))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Сервер", color = Muted, fontSize = 12.sp)
-                    Text(endpoint ?: "не настроен", color = Color.White, fontSize = 16.sp)
-                }
-                Text("Изменить", color = Accent, fontSize = 14.sp)
+                NlFlag(Modifier.size(40.dp))
+                Spacer(Modifier.width(16.dp))
+                Text("Amsterdam", color = Color.White, fontSize = 20.sp, modifier = Modifier.weight(1f))
+                Text("›", color = Muted, fontSize = 26.sp)
             }
-            TextButton(
-                onClick = { ctx.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                modifier = Modifier.padding(bottom = 8.dp)
-            ) { Text("Kill switch: «Блокировать соединения без VPN»", color = Muted, fontSize = 12.sp) }
         }
     }
 
@@ -151,41 +110,38 @@ fun Home() {
 }
 
 @Composable
-private fun PowerButton(up: Boolean, busy: Boolean, onClick: () -> Unit) {
-    val t = rememberInfiniteTransition(label = "pulse")
-    val pulse by t.animateFloat(1f, 1.18f, infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "p")
-    val spin by t.animateFloat(0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "s")
-    val color by animateColorAsState(if (up) Accent else Color(0xFF2A3350), label = "c")
-    Box(Modifier.size(260.dp), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier.size(220.dp).scale(if (up) pulse else 1f).alpha(if (up) 0.18f else 0.08f)
-                .clip(CircleShape).background(color)
-        )
-        Box(
-            Modifier.size(180.dp).clip(CircleShape)
-                .background(Brush.linearGradient(if (up) listOf(Accent, Color(0xFF1FA67A)) else listOf(Color(0xFF232C47), Color(0xFF181F36))))
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) {
-            androidx.compose.foundation.Canvas(Modifier.size(72.dp)) {
-                val c = if (up) Bg else Color.White
-                val w = 9.dp.toPx()
-                drawArc(c, -60f, 300f, false, Offset(w, w), Size(size.width - 2 * w, size.height - 2 * w), style = Stroke(w, cap = StrokeCap.Round))
-                drawLine(c, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height * 0.5f), w, StrokeCap.Round)
-            }
-        }
-        if (busy) androidx.compose.foundation.Canvas(Modifier.size(204.dp)) {
-            drawArc(Accent, spin, 90f, false, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
-        }
+private fun NlFlag(modifier: Modifier) {
+    Canvas(modifier.clip(CircleShape).border(1.dp, Color(0x44FFFFFF), CircleShape)) {
+        val h = size.height / 3
+        drawRect(Color(0xFFAE1C28), Offset.Zero, Size(size.width, h))
+        drawRect(Color.White, Offset(0f, h), Size(size.width, h))
+        drawRect(Color(0xFF21468B), Offset(0f, 2 * h), Size(size.width, h))
     }
 }
 
 @Composable
-private fun Stat(label: String, value: String, color: Color, modifier: Modifier) {
-    Column(modifier.clip(RoundedCornerShape(18.dp)).background(Surface).padding(14.dp)) {
-        Text(label, color = Muted, fontSize = 12.sp)
-        Spacer(Modifier.height(4.dp))
-        Text(value, color = color, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+private fun PowerButton(up: Boolean, busy: Boolean, onClick: () -> Unit) {
+    val spin by rememberInfiniteTransition(label = "s").animateFloat(
+        0f, 360f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "r"
+    )
+    Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(68.dp).clip(CircleShape)
+                .background(if (up) Color.White else Color(0xFF1A1A1A))
+                .border(1.dp, Color(0x55FFFFFF), CircleShape)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.size(28.dp)) {
+                val c = if (up) Color.Black else Color.White
+                val w = 3.5.dp.toPx()
+                drawArc(c, -60f, 300f, false, Offset(w, w), Size(size.width - 2 * w, size.height - 2 * w), style = Stroke(w, cap = StrokeCap.Round))
+                drawLine(c, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height * 0.5f), w, StrokeCap.Round)
+            }
+        }
+        if (busy) Canvas(Modifier.size(82.dp)) {
+            drawArc(Color.White, spin, 90f, false, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+        }
     }
 }
 
@@ -202,12 +158,10 @@ private fun ImportDialog(onDismiss: () -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Добавить сервер", color = Color.White) },
+        containerColor = Color(0xFF111111),
+        title = { Text("Сервер", color = Color.White) },
         text = {
             Column {
-                Text("Вставьте ссылку vpn://… или содержимое .conf, которое выдал сервер (vpnctl add).", color = Muted, fontSize = 13.sp)
-                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = text, onValueChange = { text = it; err = null },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp),
@@ -215,8 +169,8 @@ private fun ImportDialog(onDismiss: () -> Unit) {
                 )
                 err?.let { Text(it, color = Danger, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
                 Row(Modifier.padding(top = 8.dp)) {
-                    TextButton(onClick = { clip.getText()?.text?.let { text = it; err = null } }) { Text("Вставить") }
-                    TextButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Из файла") }
+                    TextButton(onClick = { clip.getText()?.text?.let { text = it; err = null } }) { Text("Вставить", color = Color.White) }
+                    TextButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Из файла", color = Color.White) }
                 }
             }
         },
@@ -225,7 +179,7 @@ private fun ImportDialog(onDismiss: () -> Unit) {
                 runCatching { Vpn.save(text) }
                     .onSuccess { onDismiss() }
                     .onFailure { err = "Неверная конфигурация: ${it.message}" }
-            }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Bg)) { Text("Сохранить") }
+            }, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = Muted) } }
     )
