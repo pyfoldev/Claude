@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""vpnctl — управление клиентами Veil VPN.
+  vpnctl add <имя>     создать клиента, показать ссылку vpn:// и QR
+  vpnctl show <имя>    показать ещё раз
+  vpnctl list          список клиентов
+  vpnctl remove <имя>  удалить клиента
+"""
+import base64, os, re, subprocess, sys
+
+ENV = os.environ.get("VEIL_ENV", "/etc/veil/server.env")
+WG0 = os.environ.get("VEIL_WG0", "/etc/wireguard/wg0.conf")
+CLIENTS = os.environ.get("VEIL_CLIENTS", "/etc/veil/clients")
+
+def sh(*a, inp=None):
+    return subprocess.run(a, input=inp, capture_output=True, text=True, check=True).stdout.strip()
+
+def env():
+    d = {}
+    for l in open(ENV):
+        if "=" in l:
+            k, v = l.strip().split("=", 1); d[k] = v
+    return d
+
+def server_pub():
+    sk = re.search(r"^PrivateKey\s*=\s*(\S+)", open(WG0).read(), re.M).group(1)
+    return sh("wg", "pubkey", inp=sk + "\n")
+
+def used_ips():
+    return {int(m) for m in re.findall(r"AllowedIPs\s*=\s*\d+\.\d+\.\d+\.(\d+)/32", open(WG0).read())}
+
+def apply():
+    if os.environ.get("VEIL_NOAPPLY"): return
+    stripped = sh("wg-quick", "strip", "wg0")
+    p = "/run/veil-wg.conf"
+    with open(os.open(p, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600), "w") as f: f.write(stripped + "\n")
+    sh("wg", "syncconf", "wg0", p); os.remove(p)
+
+def link(name):
+    conf = open(f"{CLIENTS}/{name}.conf").read()
+    return "vpn://" + base64.urlsafe_b64encode(conf.encode()).decode().rstrip("=")
+
+def show(name):
+    l = link(name)
+    print(f"\nКлиент: {name}\n\nСсылка (вставьте в приложении Veil):\n{l}\n")
+    try: subprocess.run(["qrencode", "-t", "ansiutf8", l])
+    except FileNotFoundError: pass
+    print(f"\nФайл .conf: {CLIENTS}/{name}.conf")
+
+def add(name):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", name): sys.exit("Имя: латиница, цифры, _ и -")
+    if os.path.exists(f"{CLIENTS}/{name}.conf"): sys.exit("Такой клиент уже есть")
+    e = env()
+    free = [i for i in range(2, 255) if i not in used_ips()]
+    if not free: sys.exit("Нет свободных адресов")
+    ip = f"{e['SUBNET']}.{free[0]}"
+    priv = sh("wg", "genkey"); pub = sh("wg", "pubkey", inp=priv + "\n"); psk = sh("wg", "genpsk")
+    os.makedirs(CLIENTS, mode=0o700, exist_ok=True)
+    conf = f"""[Interface]
+PrivateKey = {priv}
+Address = {ip}/32
+DNS = {e['DNS']}
+MTU = {e['MTU']}
+
+[Peer]
+PublicKey = {server_pub()}
+PresharedKey = {psk}
+Endpoint = {e['ENDPOINT']}:{e['PORT']}
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+"""
+    with open(os.open(f"{CLIENTS}/{name}.conf", os.O_CREAT | os.O_WRONLY, 0o600), "w") as f: f.write(conf)
+    with open(WG0, "a") as f:
+        f.write(f"\n# veil:{name}\n[Peer]\nPublicKey = {pub}\nPresharedKey = {psk}\nAllowedIPs = {ip}/32\n")
+    apply(); show(name)
+
+def remove(name):
+    txt = open(WG0).read()
+    new = re.sub(rf"\n# veil:{re.escape(name)}\n\[Peer\]\n(?:[^\n\[]+\n?)*", "\n", txt)
+    if new == txt: sys.exit("Клиент не найден")
+    open(WG0, "w").write(new)
+    try: os.remove(f"{CLIENTS}/{name}.conf")
+    except FileNotFoundError: pass
+    apply(); print("Удалён:", name)
+
+def main():
+    a = sys.argv[1:]
+    if os.geteuid() != 0 and not os.environ.get("VEIL_ENV"): sys.exit("Нужен root: sudo vpnctl ...")
+    if len(a) == 2 and a[0] == "add": add(a[1])
+    elif len(a) == 2 and a[0] == "show": show(a[1])
+    elif len(a) == 2 and a[0] in ("remove", "rm"): remove(a[1])
+    elif a == ["list"]:
+        for n in re.findall(r"# veil:(\S+)", open(WG0).read()): print(n)
+    else: print(__doc__)
+
+main()
