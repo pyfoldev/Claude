@@ -74,6 +74,7 @@ fun Home() {
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Backdrop()
+        FlagBanner(Modifier.fillMaxWidth().height(340.dp))
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
             Spacer(Modifier.height(28.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -107,6 +108,21 @@ fun Home() {
     }
 
     if (showImport) ImportDialog(onDismiss = { showImport = false })
+}
+
+/** Флаг Нидерландов приглушённой полосой за шапкой, плавно уходит в чёрный. */
+@Composable
+private fun FlagBanner(modifier: Modifier) {
+    Canvas(modifier) {
+        val h = size.height / 3
+        drawRect(Color(0xFFAE1C28).copy(alpha = 0.55f), Offset.Zero, Size(size.width, h))
+        drawRect(Color.White.copy(alpha = 0.40f), Offset(0f, h), Size(size.width, h))
+        drawRect(Color(0xFF21468B).copy(alpha = 0.60f), Offset(0f, 2 * h), Size(size.width, h))
+        drawRect(
+            Brush.verticalGradient(0f to Color(0x66000000), 0.55f to Color(0x33000000), 1f to Color.Black),
+            Offset.Zero, size
+        )
+    }
 }
 
 @Composable
