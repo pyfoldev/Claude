@@ -115,20 +115,21 @@ fun Home() {
     if (showImport) ImportDialog(onDismiss = { showImport = false })
 }
 
-/** Флаг Нидерландов мягким градиентом за шапкой: без резких границ, растворяется в чёрном. */
+/** Чёткий флаг Нидерландов (три равные полосы), приглушён и растворяется в чёрном только внизу. */
 @Composable
 private fun FlagBanner(modifier: Modifier) {
-    val red = Color(0xFFAE1C28); val blue = Color(0xFF21468B)
     Canvas(modifier) {
+        val h = size.height / 3
+        drawRect(Color(0xFFAE1C28).copy(alpha = 0.62f), Offset.Zero, Size(size.width, h))
+        drawRect(Color.White.copy(alpha = 0.34f), Offset(0f, h), Size(size.width, h))
+        drawRect(Color(0xFF21468B).copy(alpha = 0.66f), Offset(0f, 2 * h), Size(size.width, h))
         drawRect(
             Brush.verticalGradient(
-                0.00f to red.copy(alpha = 0.60f),
-                0.24f to red.copy(alpha = 0.50f),
-                0.46f to Color.White.copy(alpha = 0.26f),
-                0.66f to blue.copy(alpha = 0.50f),
-                0.84f to blue.copy(alpha = 0.22f),
-                1.00f to blue.copy(alpha = 0f)
-            )
+                0.00f to Color(0x40000000),
+                0.55f to Color(0x40000000),
+                1.00f to Color.Black
+            ),
+            Offset.Zero, size
         )
     }
 }
