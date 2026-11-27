@@ -1,0 +1,57 @@
+services:
+  bot:
+    build: .
+    restart: on-failure   # «Выключить» в панели владельца действительно остановит бот; сбой — перезапустит
+    stop_grace_period: 45s
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true      # процесс в контейнере не может повысить права
+    cap_drop:
+      - ALL                         # боту не нужны привилегии Linux
+    environment:
+      DB_PATH: /data/bot.db
+      GIFS_DIR: /data/gifs      # локальные гифки (python tools/fetch_gifukai.py --out data/gifs); нет папки — гифки берутся из API
+      # MODE (polling | webhook), WEBHOOK_URL и WEBHOOK_SECRET берутся из .env; без домена используйте polling
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8080"   # наружу — только через Caddy/nginx с HTTPS
+
+  # PostgreSQL: включается профилем `pg` (docker compose --profile pg up -d), пока бот работает на SQLite — не мешает.
+  # Порты наружу не публикуются: бот ходит по внутренней сети по имени `postgres`. Пароль — POSTGRES_PASSWORD в .env.
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["pg"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: chat
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # HTTPS-прокси для Mini App капчи; наружу отдаёт только /captcha и /webapp
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - bot
+    ports:
+      - "80:80"
+      - "8444:8444"
+      - "443:443"
+      - "88:88"       # webhook Telegram
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

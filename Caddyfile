@@ -1,0 +1,112 @@
+{
+	# Existing Noritg Mini App keeps :8444; Nullgram uses standard HTTPS :443.
+	# (нужно открыть в ufw), а сертификат Let's Encrypt проверяется через порт 80.
+	http_port 80
+	https_port 443
+}
+
+noritg.duckdns.org:8444 {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	request_body {
+		max_size 1MB
+	}
+	@captcha path /captcha /captcha/* /webapp/* /panel /panel/* /giveaway /giveaway/*
+	handle @captcha {
+		reverse_proxy bot:8080
+	}
+	handle {
+		respond "Not found" 404
+	}
+}
+
+# Webhook Telegram: порт 88 (Telegram принимает только 443, 80, 88, 8443 — первые три на сервере заняты).
+# Наружу отдаётся ТОЛЬКО /webhook; подлинность запроса бот проверяет по секретному заголовку.
+noritg.duckdns.org:88 {
+	request_body {
+		max_size 1MB
+	}
+	@hook path /webhook
+	handle @hook {
+		reverse_proxy bot:8080
+	}
+	handle {
+		respond "Not found" 404
+	}
+}
+
+
+yologram.duckdns.org {
+	# WebSocket relay to Telegram web hosts for networks that block them (ws<N>[-1].web.telegram.org only)
+	@tg path_regexp tg ^/tg/([a-z]{0,3}ws[1-5](?:-1)?)/(apiws[a-z_0-9]{0,16})$
+	handle @tg {
+		rewrite * /{re.tg.2}
+		reverse_proxy {re.tg.1}.web.telegram.org:443 {
+			header_up Host {re.tg.1}.web.telegram.org
+			header_up Origin https://web.telegram.org
+			transport http {
+				tls
+				tls_server_name {re.tg.1}.web.telegram.org
+			}
+		}
+	}
+	handle_path /web/* {
+		root * /data/yologram-web
+		file_server
+	}
+	@landing path / /index.html /logo.svg /shots/*
+	handle @landing {
+		encode gzip
+		root * /data/yologram-site
+		file_server
+	}
+	handle {
+		encode gzip
+		reverse_proxy nullgram:8787
+	}
+}
+
+openrole.duckdns.org {
+    encode zstd gzip
+    request_body {
+        max_size 30MB
+    }
+    reverse_proxy 172.18.0.1:8787 {
+        flush_interval -1
+    }
+}
+
+openagents.duckdns.org {
+    encode zstd gzip
+    request_body {
+        max_size 2GB
+    }
+    reverse_proxy 172.18.0.1:8788 {
+        flush_interval -1
+        transport http {
+            read_timeout 0
+        }
+    }
+}
+
+# Панель Dokploy (swarm-сервис на хосте, порт 3000)
+dokploy.114.29.238.123.sslip.io {
+	encode zstd gzip
+	reverse_proxy 172.18.0.1:3000
+}
+
+# Стайка (Go-сервер + Android-приложение): чат, websocket, голос
+nupp.duckdns.org {
+	encode zstd gzip
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy staika:8080 {
+		flush_interval -1
+	}
+}

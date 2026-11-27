@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Проверка</title>
+  <link rel="stylesheet" href="/webapp/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <main>
+    <p id="hint">Загрузка проверки…</p>
+    <div id="ts" hidden></div>
+    <div id="slot"></div>
+    <input id="answer" type="text" inputmode="text" maxlength="8" autocomplete="off" hidden
+           autocapitalize="characters" spellcheck="false" placeholder="Код" aria-label="Код с картинки">
+    <button id="submit" type="button" disabled hidden>Проверить</button>
+    <button id="alt" type="button" hidden>Не получается? Ввести код с картинки</button>
+    <p id="status" role="status"></p>
+  </main>
+  <script src="/webapp/captcha.js"></script>
+</body>
+</html>
