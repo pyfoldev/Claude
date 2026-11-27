@@ -11,7 +11,6 @@
         2.5 веб-сервер (капча, панель, конкурсы)
         2.6 ФОНОВЫЕ ЗАДАЧИ (jobs)            — сюда добавлять циклы «раз в N минут».
         2.7 запуск: webhook или polling
-Шаблоны для нового хендлера/middleware/задачи — в папке templates/, подробно — docs/.
 """
 import asyncio
 from contextlib import AsyncExitStack
@@ -95,7 +94,7 @@ from bot.giveaway_server import add_giveaway_routes
 from bot.metrics import Metrics, MetricsMiddleware
 from bot.updatequeue import UpdateQueue
 # ======================= MIDDLEWARE (прослойки до хендлеров) =======================
-# Новая прослойка: файл middlewares/xxx.py (шаблон — templates/middleware_template.py), импорт здесь,
+# Новая прослойка: файл middlewares/xxx.py, импорт здесь,
 # подключение — в разделе 2.3 внутри main().
 from bot.middlewares.blocklist import BlockMiddleware
 from bot.middlewares.counter import CounterMiddleware
@@ -368,7 +367,6 @@ async def main() -> bool:
 
         # --- 2.6 ФОНОВЫЕ ЗАДАЧИ ---
         # Формат: "название для логов": lambda: функция_цикла(аргументы). Добавить свою — одна строка в словарь jobs ниже.
-        # (шаблон цикла — templates/job_template.py)
         backup_dir = os.environ.get("BACKUP_DIR") or os.path.join(data_dir, "backups")
         jobs = {"капча": lambda: captcha.captcha_watchdog(bot, db),
                 "дуэли": lambda: duels.duel_watchdog(bot, db),

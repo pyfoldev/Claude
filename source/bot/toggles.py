@@ -13,7 +13,7 @@ from bot.db import Database
 # ключ настройки -> подпись (порядок = порядок в меню настроек)
 # ВКЛЮЧАТЕЛИ ГРУПП КОМАНД. Новая группа, которую админ может выключить:
 #   1) добавьте "ключ_on": "подпись" сюда;  2) заведите "ключ_on": 1 в DEFAULT_SETTINGS (db.py);
-#   3) в вашем handlers/xxx.py: router.message.filter(Enabled("ключ_on"))   (см. templates/toggle_group_template.py)
+#   3) в вашем handlers/xxx.py: router.message.filter(Enabled("ключ_on"))
 GROUPS = {
     "mod_on": "Модерация: бан, мут, кик, варн, чистка, откат, ранги, история, массовый кик",
     "svc_on": "Сервисы: калк, курс, крипто, вики, факт, маршрут, гороскоп",

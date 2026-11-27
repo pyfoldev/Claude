@@ -54,7 +54,7 @@ class AiError(Exception):
 # │ ai.has_river          — есть ли ключ (проверяйте ДО вызова);                                   │
 # │ await ai.ask(вопрос, context=…, system=…) — обычный ответ текстом;                              │
 # │ ai.ask_stream / converse / moderate / vision_is_nsfw / transcribe — специальные вызовы.          │
-# │ Ошибки — AiError. Шаблон команды с ИИ — templates/ai_command_template.py, гайд — docs/AI.md.   │
+# │ Ошибки — AiError. Образец своей команды с ИИ — handlers/ai.py.                       │
 # └──────────────────────────────────────────────────────────────────────────────────────────────┘
 class AiClient:
     def __init__(self, session: aiohttp.ClientSession, *, river_key: str, river_base: str,
