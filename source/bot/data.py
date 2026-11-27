@@ -1,21 +1,303 @@
+"""Данные: база (SQLite/PostgreSQL), бэкапы, журнал модерации.
+
+Файл собран из нескольких исходных модулей; каждый начинается с шапки «МОДУЛЬ: bot/<путь>.py».
+Ищите по слову «МОДУЛЬ:» (Ctrl+F). Пути вида handlers/xxx.py в комментариях — это такие разделы.
+"""
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
-import json
-import os
-import stat
-import time
-
 import aiosqlite
+import asyncio
+import asyncpg
+import html
+import json
+import logging
+import os
+import re
+import secrets
+import sqlite3
+import stat
+import tempfile
+import time
+from aiogram.exceptions import TelegramRetryAfter
+from collections import deque
+from contextlib import asynccontextmanager
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Awaitable, Callable
+from urllib.parse import unquote, urlsplit
 
+
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# МОДУЛЬ: bot/audit.py
+# Журнал действий в отдельный чат/канал: очередь с ограничением скорости, повтор при flood control.
+# Сбой журнала никогда не ломает модерацию: ошибки только пишутся в лог.
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+ICONS__audit = {"бан": "🔨", "разбан": "✅", "мут": "🔇", "размут": "🔊", "кик": "👢", "варн": "⚠️",
+         "снять варн": "↩️", "удаление": "🗑", "ранг": "🎖", "массовый кик": "🧹", "жалоба": "📣",
+         "настройка": "⚙️", "антирейд": "🚨"}
+MAX_TEXT__audit = 3500
+
+
+def _dur__audit(sec: int | None) -> str:
+    if not sec:
+        return ""
+    if sec % 86400 == 0:
+        return f" на {sec // 86400} дн."
+    if sec % 3600 == 0:
+        return f" на {sec // 3600} ч."
+    return f" на {max(sec // 60, 1)} мин."
+
+
+def _escape_clip(value: str, budget: int) -> str:
+    escaped = html.escape(value)
+    if len(escaped) <= budget:
+        return escaped
+    out, used = [], 0
+    for ch in value:
+        fragment = html.escape(ch)
+        if used + len(fragment) > budget - 1:
+            break
+        out.append(fragment)
+        used += len(fragment)
+    return "".join(out) + "…"
+
+
+def format_event(chat_title: str, actor: str, target: str | None, action: str, duration: int | None,
+                 reason: str, ts: int) -> str:
+    lines = [f"{ICONS__audit.get(action, '📝')} <b>{_escape_clip(action, 160)}</b>{_dur__audit(duration)}",
+             f"Чат: {_escape_clip(chat_title, 768)}", f"Кто: {_escape_clip(actor, 768)}"]
+    if target:
+        lines.append(f"Кого: {_escape_clip(target, 768)}")
+    timestamp = "🕒 " + time.strftime("%d.%m.%Y %H:%M:%S", time.gmtime(ts)) + " UTC"
+    if reason:
+        budget = MAX_TEXT__audit - len("\n".join(lines)) - len(timestamp) - len("Причина: ") - 2
+        lines.append("Причина: " + _escape_clip(reason, max(1, budget)))
+    lines.append(timestamp)
+    return "\n".join(lines)
+
+
+class Auditor:
+    def __init__(self, bot, db, interval: float = 1.1, max_queue: int = 500,
+                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep):
+        self.bot, self.db, self.interval, self.max_queue, self._sleep = bot, db, interval, max_queue, sleep
+        self._q: deque[tuple[int, str]] = deque()
+        self._wake = asyncio.Event()
+        self._task: asyncio.Task | None = None
+        self._pending: set[asyncio.Task] = set()
+
+    # ---- приём событий ----
+    def action_fire_and_forget(self, *args) -> None:
+        """Вызывается из Database.log_action: ничего не ждём и ничего не бросаем."""
+        try:
+            t = asyncio.get_running_loop().create_task(self.record_action(*args))
+        except RuntimeError:
+            return
+        self._pending.add(t)
+        t.add_done_callback(self._pending.discard)
+
+    async def _name(self, uid: int | None) -> str:
+        if not uid:
+            return "—"
+        name = await self.db.user_name(uid)
+        return f"{name} ({uid})" if name else f"id{uid}"
+
+    async def record_action(self, chat_id: int, actor_id: int, target_id: int | None, action: str,
+                            reason: str, ts: int, duration: int | None) -> None:
+        try:
+            dest = (await self.db.get_settings(chat_id)).get("log_chat_id", 0)
+            if not dest:
+                return
+            chat = await self.db.get_chat(chat_id)
+            text = format_event((chat or {}).get("title") or str(chat_id), await self._name(actor_id),
+                                await self._name(target_id) if target_id else None, action, duration, reason or "", ts)
+            await self.push(dest, text)
+        except Exception:
+            logging.exception("audit: не смог подготовить запись")
+
+    async def push(self, dest: int, text: str) -> None:
+        if len(self._q) >= self.max_queue:
+            self._q.popleft()   # переполнение: теряем самое старое
+        self._q.append((dest, text))
+        self._wake.set()
+
+    # ---- отправка ----
+    async def _send_one(self, dest: int, text: str) -> None:
+        for _ in range(3):
+            try:
+                await self.bot.send_message(dest, text, disable_web_page_preview=True)
+                return
+            except TelegramRetryAfter as e:
+                await self._sleep(min(e.retry_after, 60))
+            except Exception as e:
+                logging.warning("audit: отправка в %s не удалась: %s", dest, type(e).__name__)
+                return
+
+    async def drain(self) -> None:
+        """Отправить всё из очереди (используется воркером и тестами)."""
+        if self._pending:
+            await asyncio.shield(asyncio.gather(*list(self._pending), return_exceptions=True))
+        first = True
+        while self._q:
+            dest, text = self._q.popleft()
+            try:
+                if not first:
+                    await self._sleep(self.interval)
+                first = False
+                await self._send_one(dest, text)
+            except asyncio.CancelledError:
+                self._q.appendleft((dest, text))
+                raise
+
+    async def _worker(self) -> None:
+        while True:
+            await self._wake.wait()
+            self._wake.clear()
+            try:
+                await self.drain()
+            except Exception:
+                logging.exception("audit worker")
+            await self._sleep(self.interval)
+
+    def start(self) -> None:
+        if self._task is None:
+            self._task = asyncio.create_task(self._worker())
+
+    def stop(self) -> None:
+        if self._task:
+            self._task.cancel()
+            self._task = None
+
+
+    async def aclose(self, timeout: float = 5.0) -> None:
+        worker = self._task
+        self.stop()
+        if worker is not None:
+            await asyncio.gather(worker, return_exceptions=True)
+        try:
+            await asyncio.wait_for(self.drain(), timeout)
+        except asyncio.TimeoutError:
+            logging.warning("audit: shutdown deadline reached; %s events left", len(self._q))
+        finally:
+            pending = list(self._pending)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            self._pending.difference_update(pending)
+            self._q.clear()
+
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# МОДУЛЬ: bot/backup.py
+# Автобэкап БД: копия через sqlite backup API, проверка целостности, ротация, оповещение при ошибке.
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+PREFIX = "bot-backup-"
+
+
+class BackupError(Exception):
+    pass
+
+
+async def _check_pg_dump(path: str) -> None:
+    proc = await asyncio.create_subprocess_exec("pg_restore", "--list", path,
+                                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        _, error = await asyncio.wait_for(proc.communicate(), 60)
+    except BaseException:
+        if proc.returncode is None:
+            proc.kill()
+        await proc.communicate()
+        raise
+    if proc.returncode != 0:
+        raise BackupError("дамп PostgreSQL не читается: " + error.decode(errors="replace")[:150])
+
+
+def _check_integrity(path: str) -> None:
+    try:
+        conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            res = conn.execute("PRAGMA integrity_check").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        raise BackupError(f"копия не открывается: {e}") from e
+    if not res or res[0] != "ok":
+        raise BackupError(f"проверка целостности: {res[0] if res else 'нет ответа'}")
+
+
+async def make_backup(db, directory: str, now: int | None = None) -> str:
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    ts = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now if now is not None else time.time()))
+    pg = getattr(db, "backend", "sqlite") == "pg"
+    path = os.path.join(directory, f"{PREFIX}{ts}-{time.time_ns():020d}-{secrets.token_hex(4)}.{'dump' if pg else 'db'}")
+    descriptor, partial = tempfile.mkstemp(prefix=".backup-", suffix=".partial", dir=directory)
+    os.close(descriptor)
+    try:
+        await db.backup_to(partial)
+        if pg:
+            await _check_pg_dump(partial)
+        else:
+            await asyncio.to_thread(_check_integrity, partial)
+        os.replace(partial, path)  # only validated backups become visible to rotation
+    except BaseException:
+        if os.path.exists(partial):
+            os.remove(partial)
+        raise
+    return path
+
+
+def rotate(directory: str, keep: int) -> int:
+    pattern = re.compile(r"bot-backup-([0-9]{8}-[0-9]{6})(?:-([0-9]+)-[0-9a-f]+)?\.(?:db|dump)")
+    files = []
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            match = pattern.fullmatch(entry.name)
+            if match and entry.is_file(follow_symlinks=False):
+                files.append(((match[1], int(match[2] or 0)), entry.name))
+    files.sort()
+    old = files[:-keep] if keep > 0 else files
+    for _, name in old:
+        os.remove(os.path.join(directory, name))
+    return len(old)
+
+
+async def backup_once(db, directory: str, keep: int, notify: Callable[[str], Awaitable[None]],
+                      now: int | None = None) -> bool:
+    try:
+        await make_backup(db, directory, now=now)
+        rotate(directory, keep)
+        return True
+    except Exception as e:
+        logging.exception("backup failed")
+        try:
+            await notify(f"⚠️ Автоматический бэкап базы не удался: {type(e).__name__}: {e}")
+        except Exception:
+            logging.exception("backup notify failed")
+        return False
+
+
+async def backup_loop(db, directory: str, keep: int, notify: Callable[[str], Awaitable[None]],
+                      interval: int = 86400, first_delay: int = 300) -> None:
+    await asyncio.sleep(first_delay)
+    while True:
+        await backup_once(db, directory, keep, notify)
+        await asyncio.sleep(interval)
+
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# МОДУЛЬ: bot/db.py
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
 # user_id -> @ник без «@» (None — ника нет). Заполняется при каждой встрече с пользователем и при чтении имени;
 # нужен упоминаниям: ссылка по нику работает всегда, а ссылка по id — не у всех (см. bot.targets.mention).
 USERNAMES: dict[int, str | None] = {}
 
 # ===== КОНСТАНТЫ БД / ЭКОНОМИКИ (меняйте здесь) =====
 HOUR = 3600
-DAY = 86400
+DAY__db = 86400
 ROLLUP_DAYS = 90        # статистика старше N дней сворачивается из почасовой в посуточную
 START_BALANCE = 1000    # стартовые монеты нового участника чата
 BONUS_AMOUNT = 500      # ежедневный «бонус»
@@ -418,8 +700,8 @@ class Database:
     async def connect(cls, path: str, schema: str | None = None) -> "Database":
         """path — файл SQLite или postgresql://… (schema — отдельная схема PG, нужна тестам)."""
         if path.startswith(("postgresql://", "postgres://")):
-            from bot import pg
-            conn = await pg.connect(path, schema)
+            pass  # (импорт убран: всё в одном модуле)
+            conn = await connect__pg(path, schema)
             try:
                 await conn.executescript(SCHEMA)
                 await conn.execute("ALTER TABLE pairs ADD COLUMN IF NOT EXISTS gift_day INTEGER DEFAULT 0")
@@ -773,13 +1055,13 @@ class Database:
 
     async def rollup_old(self, now: int) -> None:
         await self.flush_messages()
-        border = now - ROLLUP_DAYS * DAY
+        border = now - ROLLUP_DAYS * DAY__db
         await self.conn.execute(
             "INSERT INTO msg_daily SELECT chat_id, user_id, day, SUM(n) FROM ("
             "SELECT chat_id, user_id, hour_ts/? *? AS day, n FROM msg_hourly WHERE hour_ts<?) t "
             "GROUP BY chat_id, user_id, day "
             "ON CONFLICT(chat_id,user_id,day_ts) DO UPDATE SET n=msg_daily.n+excluded.n",
-            (DAY, DAY, border),
+            (DAY__db, DAY__db, border),
         )
         await self.conn.execute("DELETE FROM msg_hourly WHERE hour_ts<?", (border,))
         await self.conn.commit()
@@ -794,9 +1076,9 @@ class Database:
 
     async def prune_old(self, now: int) -> None:
         """Чистка таблиц, которые иначе растут бесконечно: журнал репутации (кулдаун — часы) и суточные лимиты."""
-        await self.conn.execute("DELETE FROM rep_log WHERE ts<?", (now - 2 * DAY,))
-        await self.conn.execute("DELETE FROM usage WHERE day<?", (now // DAY - 7,))
-        await self.conn.execute("DELETE FROM aimod_events WHERE ts<?", (now - 7 * DAY,))   # тексты хранятся неделю
+        await self.conn.execute("DELETE FROM rep_log WHERE ts<?", (now - 2 * DAY__db,))
+        await self.conn.execute("DELETE FROM usage WHERE day<?", (now // DAY__db - 7,))
+        await self.conn.execute("DELETE FROM aimod_events WHERE ts<?", (now - 7 * DAY__db,))   # тексты хранятся неделю
         await self.conn.execute("DELETE FROM pending_bans WHERE ts<?", (now - PENDING_BAN_TTL,))
         await self.load_pending_names()
         await self.gw_prune(now)
@@ -1019,7 +1301,7 @@ class Database:
             raise RuntimeError("backup cannot run inside an atomic operation")
         await self.flush_messages()
         if self.backend == "pg":
-            from bot.pg import pg_dump
+            pass  # (импорт убран: всё в одном модуле)
             await pg_dump(self.path, path)
             return
         import sqlite3
@@ -1111,13 +1393,13 @@ class Database:
             return False
         cur = await self.conn.execute(
             "INSERT INTO usage VALUES(?,?,?,1) ON CONFLICT(chat_id,kind,day) DO UPDATE SET n=usage.n+1 "
-            "WHERE usage.n<?", (chat_id, kind, now // DAY, limit))
+            "WHERE usage.n<?", (chat_id, kind, now // DAY__db, limit))
         await self.conn.commit()
         return cur.rowcount == 1
 
     async def refund_quota(self, chat_id: int, kind: str, now: int) -> None:
         await self.conn.execute(
-            "UPDATE usage SET n=n-1 WHERE chat_id=? AND kind=? AND day=? AND n>0", (chat_id, kind, now // DAY))
+            "UPDATE usage SET n=n-1 WHERE chat_id=? AND kind=? AND day=? AND n>0", (chat_id, kind, now // DAY__db))
         await self.conn.commit()
 
     # ---------- огород ----------
@@ -1958,7 +2240,7 @@ class Database:
 
     async def claim_bonus(self, chat_id: int, user_id: int, now: int) -> int | None:
         await self._ensure_wallet(chat_id, user_id)
-        day = now // DAY
+        day = now // DAY__db
         cur = await self.conn.execute(
             "UPDATE wallets SET balance=balance+?, last_bonus_day=? "
             "WHERE chat_id=? AND user_id=? AND last_bonus_day<?",
@@ -2549,3 +2831,229 @@ class Database:
     async def expired_duels(self, now: int) -> list[dict]:
         cur = await self.conn.execute("SELECT data FROM duels WHERE expires_at<=?", (now,))
         return [json.loads(r["data"]) for r in await cur.fetchall()]
+
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# МОДУЛЬ: bot/pg.py
+# PostgreSQL-адаптер: даёт asyncpg тот же интерфейс, что aiosqlite (execute/commit/курсор), и переводит
+# SQLite-диалект запросов Database в PostgreSQL. Публичные методы Database при этом не меняются.
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+AUTOINC_TABLES = {"mod_log", "owner_log", "awards", "notes", "timers", "warn_events", "reports", "filters", "aimod_events", "giveaways", "quotes", "suggestions", "payments", "pairs", "pair_log", "pair_children", "pair_pets", "triggers", "faq", "periodic"}
+# для INSERT OR REPLACE: первичный ключ таблицы
+REPLACE_KEYS = {"marriages": ("chat_id", "u1", "u2"), "relations": ("chat_id", "u1", "u2")}
+
+
+def _number_placeholders(sql: str) -> str:
+    out, n, quote = [], 0, False
+    for ch in sql:
+        if ch == "'":
+            quote = not quote
+        if ch == "?" and not quote:
+            n += 1
+            out.append(f"${n}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+@lru_cache(maxsize=1024)
+def translate__pg(sql: str) -> tuple[str, bool]:
+    """(SQL для PostgreSQL, нужно ли вернуть id вставленной строки)."""
+    s = sql.strip().rstrip(";")
+    returning = False
+    m = re.match(r"INSERT OR IGNORE INTO", s, re.I)
+    if m:
+        s = "INSERT INTO" + s[m.end():] + " ON CONFLICT DO NOTHING"
+    m = re.match(r"INSERT OR REPLACE INTO\s+(\w+)\s*\(([^)]*)\)", s, re.I)
+    if m:
+        table, cols = m.group(1), [c.strip() for c in m.group(2).split(",")]
+        key = REPLACE_KEYS[table]
+        upd = ",".join(f"{c}=EXCLUDED.{c}" for c in cols if c not in key)
+        s = "INSERT INTO" + s[len("INSERT OR REPLACE INTO"):] + f" ON CONFLICT ({','.join(key)}) DO UPDATE SET {upd}"
+    s = re.sub(r"\bRANDOM\(\)", "random()", s, flags=re.I)
+    s = s.replace("lower_py(", "lower(")
+    m = re.match(r"INSERT INTO\s+(\w+)", s, re.I)
+    if m and m.group(1).lower() in AUTOINC_TABLES and "ON CONFLICT" not in s.upper():
+        s += " RETURNING id"
+        returning = True
+    return _number_placeholders(s), returning
+
+
+def translate_ddl(ddl: str) -> str:
+    ddl = ddl.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
+    return re.sub(r"\bINTEGER\b", "BIGINT", ddl)
+
+
+class PgRow:
+    """Строка, ведущая себя как sqlite3.Row: row["col"], row[0], dict(row), распаковка."""
+    __slots__ = ("_keys", "_vals")
+
+    def __init__(self, record: asyncpg.Record):
+        self._keys = list(record.keys())
+        self._vals = [_norm__pg(v) for v in record.values()]
+
+    def keys(self):
+        return self._keys
+
+    def __getitem__(self, k):
+        return self._vals[k if isinstance(k, int) else self._keys.index(k)]
+
+    def __iter__(self):
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
+
+
+def _norm__pg(v: Any) -> Any:
+    from decimal import Decimal
+    return int(v) if isinstance(v, Decimal) and v == v.to_integral_value() else v
+
+
+class PgCursor:
+    def __init__(self, rows: list[PgRow], rowcount: int, lastrowid: int | None):
+        self._rows, self.rowcount, self.lastrowid = rows, rowcount, lastrowid
+
+    async def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    async def fetchall(self):
+        return list(self._rows)
+
+
+class PgConn:
+    """Одно соединение, как у SQLite: запросы идут по очереди, транзакция открывается на первой записи
+    и закрывается commit(). SELECT вне транзакции не держит её открытой."""
+
+    def __init__(self, conn: asyncpg.Connection, schema: str | None = None):
+        self._c = conn
+        self._lock = asyncio.Lock()
+        self._in_tx = False
+        self.schema = schema
+
+    async def execute(self, sql: str, args=()) -> PgCursor:
+        pg_sql, returning = translate__pg(sql)
+        is_read = bool(re.match(r"\s*(SELECT|WITH)\b", pg_sql, re.I))
+        async with self._lock:
+            try:
+                if not is_read and not self._in_tx:
+                    await self._c.execute("BEGIN")
+                    self._in_tx = True
+                if is_read or returning:
+                    recs = await self._c.fetch(pg_sql, *args)
+                    rows = [PgRow(r) for r in recs]
+                    last = rows[0]["id"] if returning and rows else None
+                    return PgCursor(rows, len(rows) if not is_read else -1, last)
+                status = await self._c.execute(pg_sql, *args)
+                return PgCursor([], int(status.split()[-1]) if status.split()[-1].isdigit() else 0, None)
+            except Exception:
+                if self._in_tx:  # в PG упавший запрос ломает всю транзакцию — откатываем, как «чистый лист»
+                    await self._c.execute("ROLLBACK")
+                    self._in_tx = False
+                raise
+
+    async def executemany(self, sql: str, args) -> None:
+        """Batch writes under the same transaction and lock as execute()."""
+        pg_sql, returning = translate__pg(sql)
+        if returning:
+            raise ValueError("executemany does not support generated IDs")
+        async with self._lock:
+            try:
+                if not self._in_tx:
+                    await self._c.execute("BEGIN")
+                    self._in_tx = True
+                await self._c.executemany(pg_sql, args)
+            except BaseException:
+                if self._in_tx:
+                    await self._c.execute("ROLLBACK")
+                    self._in_tx = False
+                raise
+
+    async def begin(self) -> None:
+        async with self._lock:
+            if not self._in_tx:
+                self._in_tx = True
+                await self._c.execute("BEGIN")
+
+    async def rollback(self) -> None:
+        async with self._lock:
+            if self._in_tx:
+                await self._c.execute("ROLLBACK")
+                self._in_tx = False
+
+    async def commit(self) -> None:
+        async with self._lock:
+            if self._in_tx:
+                await self._c.execute("COMMIT")
+                self._in_tx = False
+
+    async def executescript(self, script: str) -> None:
+        async with self._lock:
+            for stmt in (x.strip() for x in translate_ddl(script).split(";")):
+                if stmt:
+                    await self._c.execute(stmt)
+
+    async def close(self) -> None:
+        async with self._lock:
+            if self._in_tx:
+                await self._c.execute("ROLLBACK")
+            if self.schema and not getattr(self, 'schema_keep', False):
+                await self._c.execute(f'DROP SCHEMA IF EXISTS "{self.schema}" CASCADE')
+            await self._c.close()
+
+
+async def connect__pg(url: str, schema: str | None = None) -> PgConn:
+    if schema:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", schema):
+            raise ValueError("invalid PostgreSQL schema name")
+        boot = await asyncpg.connect(url)
+        try:
+            await boot.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+        finally:
+            await boot.close()
+        conn = await asyncpg.connect(url, server_settings={"search_path": schema})
+    else:
+        conn = await asyncpg.connect(url)
+    return PgConn(conn, schema)
+
+
+def _dump_connection(url: str) -> tuple[str, dict]:
+    """Keep libpq passwords out of process arguments; other URI options stay literal."""
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("postgresql", "postgres") or parsed.fragment:
+        raise ValueError("PostgreSQL backup requires a valid database URI")
+    environment = dict(os.environ)
+    netloc = parsed.netloc
+    if parsed.password is not None:
+        userinfo, host = netloc.rsplit("@", 1)
+        netloc = userinfo.split(":", 1)[0] + "@" + host
+        environment["PGPASSWORD"] = unquote(parsed.password)
+    query = []
+    for item in parsed.query.split("&") if parsed.query else []:
+        key, _, value = item.partition("=")
+        if unquote(key).lower() == "password":
+            environment["PGPASSWORD"] = unquote(value)
+        else:
+            query.append(item)
+    clean = f"{parsed.scheme}://{netloc}{parsed.path}"
+    if query:
+        clean += "?" + "&".join(query)
+    return clean, environment
+
+
+async def pg_dump(url: str, path: str, timeout: float = 300) -> None:
+    """Custom-format dump; reap pg_dump on cancellation or timeout."""
+    clean_url, environment = _dump_connection(url)
+    proc = await asyncio.create_subprocess_exec(
+        "pg_dump", "--format=custom", "--file", path, "--dbname", clean_url, env=environment,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except BaseException:
+        if proc.returncode is None:
+            proc.kill()
+        await proc.communicate()
+        raise
+    if proc.returncode != 0:
+        raise RuntimeError("pg_dump: " + err.decode(errors="replace")[:200])

@@ -1,42 +1,183 @@
-"""Веб-панель (Mini App): страница /panel и JSON API /panel/api/*.
+"""Веб: панель, конкурсы (Mini App).
 
-Безопасность: каждый запрос API несёт подписанный Telegram initData (заголовок X-Init-Data, проверка HMAC, свежесть ≤ 1 часа);
-пользователь определяется только по подписанным данным. Права проверяются НА СЕРВЕРЕ при каждом запросе — по реальному статусу в
-Telegram и рангам бота (то, что прислала страница, ничему не доверяем). Чат должен быть известен боту, а пользователь — иметь в нём
-ранг; чужие и неизвестные чаты дают 403. Есть лимит частоты на пользователя, ответы не кэшируются и не содержат секретов."""
+Файл собран из нескольких исходных модулей; каждый начинается с шапки «МОДУЛЬ: bot/<путь>.py».
+Ищите по слову «МОДУЛЬ:» (Ctrl+F). Пути вида handlers/xxx.py в комментариях — это такие разделы.
+"""
 from __future__ import annotations
 
+import aiogram
 import asyncio
 import logging
 import os
 import tempfile
 import time
+from aiohttp import web
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import aiogram
-from aiohttp import web
+# имена из более ранних файлов
+from bot.data import DAY__db, Database, HOUR
+from bot.core import DEFAULT_ACCESS, MAX_ASSIGNABLE, check, need_rank, normalize_domain, parse_duration, sync_tag, tg_rank, translate_button
+from bot.services import fmt_time, tz_of
+from bot.moderation import (
+    BulkError,
+    CONFIRM_PHRASE,
+    FLAGS,
+    FilterError,
+    MAX_FILTERS,
+    MAX_WORD_LEN,
+    MIN_RANK,
+    PAGES,
+    PAGE_HEADERS,
+    PurgeError,
+    WEBAPP_DIR,
+    allowed_values,
+    answer_matches,
+    apply_report_action,
+    bulk_ban__bulk,
+    connect_log_chat,
+    get_job,
+    get_member,
+    new_code,
+    normalize,
+    parse_targets,
+    render_image,
+    start_purge,
+    stop_job,
+    to_plain,
+    validate_init_data,
+    validate_regex,
+)
 
-from bot import bulk
-from bot import mod_service as ms
-from bot import i18n, purge, ux
-from bot.captcha_server import WEBAPP_DIR, validate_init_data
-from bot.db import DAY, HOUR, Database
-from bot.filters import MAX_FILTERS, MAX_WORD_LEN, FilterError, normalize, validate_regex
-from bot.handlers import owner as owner_mod
-from bot.handlers.logchat import connect_log_chat
-from bot.handlers.reports import apply_report_action
-from bot.handlers.settings import PAGES, allowed_values
-from bot.links import normalize_domain
-from bot.parsing import parse_duration
-from bot.ranks import DEFAULT_ACCESS, MAX_ASSIGNABLE, need_rank, tg_rank
 
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# МОДУЛЬ: bot/giveaway_server.py
+# Mini App конкурса: страница /giveaway, сведения, картинка-капча и запись в участники.
+#
+# Каждый запрос несёт подписанный Telegram initData (заголовок X-Init-Data): личность берётся только из него. Сервер сам
+# проверяет, что конкурс идёт, человек — участник чата, и капча решена (попытки — в БД, занимаются до сравнения).
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+CODE_LEN__giveaway_server = 5
+MAX_ATTEMPTS__giveaway_server = 5
+CHECK_TTL = 600            # новая картинка — не раньше чем через 10 минут после исчерпания попыток
+INIT_MAX_AGE = 3600
+
+
+def add_giveaway_routes(app: web.Application, db: Database, bot, bot_token: str) -> None:
+    image_slots = asyncio.Semaphore(4)
+    def err(status: int, code: str, text: str) -> web.Response:
+        return web.json_response({"ok": False, "error": code, "message": text}, status=status,
+                                 headers={"Cache-Control": "no-store"})
+
+    async def context(request: web.Request, gid_raw) -> tuple[int, dict] | web.Response:
+        data = validate_init_data(request.headers.get("X-Init-Data", ""), bot_token, max_age=INIT_MAX_AGE)
+        uid = data["user"].get("id") if data and isinstance(data.get("user"), dict) else None
+        if not isinstance(uid, int):
+            return err(401, "auth", "Откройте конкурс из Telegram.")
+        try:
+            if isinstance(gid_raw, bool) or not isinstance(gid_raw, (int, str)):
+                raise ValueError
+            gid = int(gid_raw)
+            if not 0 < gid < 2**63:
+                raise ValueError
+        except (TypeError, ValueError):
+            return err(400, "bad", "Нет такого конкурса.")
+        g = await db.gw_get(gid)
+        if g is None or g["status"] != "active" or g["ends_at"] <= time.time():
+            return err(410, "closed", "Конкурс уже завершён или не найден.")
+        return uid, g
+
+    async def page(request: web.Request) -> web.StreamResponse:
+        resp = web.FileResponse(WEBAPP_DIR / "giveaway.html")
+        resp.headers.update(PAGE_HEADERS)
+        return resp
+
+    async def info(request: web.Request) -> web.Response:
+        ctx = await context(request, request.query.get("id"))
+        if isinstance(ctx, web.Response):
+            return ctx
+        uid, g = ctx
+        tz = tz_of((await db.get_settings(g["chat_id"]))["tz"])
+        chat = await db.get_chat(g["chat_id"]) or {}
+        return web.json_response({"ok": True, "id": g["id"], "chat": chat.get("title") or "", "winners": g["winners"],
+                                  "ends": fmt_time(g["ends_at"], tz), "count": await db.gw_count(g["id"]),
+                                  "joined": await db.gw_joined(g["id"], uid)}, headers={"Cache-Control": "no-store"})
+
+    async def image(request: web.Request) -> web.Response:
+        ctx = await context(request, request.query.get("id"))
+        if isinstance(ctx, web.Response):
+            return ctx
+        uid, g = ctx
+        now = int(time.time())
+        chk = await db.gw_check_get(g["id"], uid)
+        if chk is not None and chk["attempts"] >= MAX_ATTEMPTS__giveaway_server and chk["expires_at"] > now:
+            return err(429, "attempts", "Слишком много неверных попыток. Попробуйте через 10 минут.")
+        if chk is None or chk["expires_at"] <= now or chk["attempts"] >= MAX_ATTEMPTS__giveaway_server:
+            await db.gw_check_new(g["id"], uid, new_code(CODE_LEN__giveaway_server), now + CHECK_TTL, now)
+            chk = await db.gw_check_get(g["id"], uid)
+        seed = f"gw:{g['id']}:{uid}:{chk['expires_at']}:{chk['answer']}"   # одна и та же картинка: перезагрузкой не набрать вариантов
+        async with image_slots:
+            png = await asyncio.to_thread(render_image, chk["answer"], seed, 1)
+        return web.Response(body=png, content_type="image/png",
+                            headers={"Cache-Control": "no-store", "X-Code-Length": str(len(chk["answer"]))})
+
+    async def join(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise TypeError
+            answer = body["answer"]
+            if not isinstance(answer, str):
+                raise TypeError
+        except (KeyError, ValueError, TypeError):
+            return err(400, "bad", "Некорректный запрос.")
+        ctx = await context(request, body.get("id"))
+        if isinstance(ctx, web.Response):
+            return ctx
+        uid, g = ctx
+        if await db.gw_joined(g["id"], uid):
+            return web.json_response({"ok": True, "already": True, "count": await db.gw_count(g["id"])})
+        if await check(bot, db, g["chat_id"], uid) is not True:
+            return err(403, "member", "Участвовать могут только участники чата. Вступите в чат и попробуйте снова.")
+        chk = await db.gw_check_get(g["id"], uid)
+        if chk is None or chk["expires_at"] <= time.time():
+            return err(409, "expired", "Картинка устарела — обновите её.")
+        if not await db.gw_check_attempt(g["id"], uid, MAX_ATTEMPTS__giveaway_server, chk["answer"], int(time.time())):
+            return err(429, "attempts", "Слишком много неверных попыток. Попробуйте через 10 минут.")
+        if not answer_matches(answer, str(chk["answer"])):
+            left = MAX_ATTEMPTS__giveaway_server - chk["attempts"] - 1
+            return err(400, "wrong", f"Неверный код. Осталось попыток: {left}." if left > 0 else
+                       "Неверный код. Попытки кончились — попробуйте через 10 минут.")
+        if not await db.gw_join(g["id"], uid, int(time.time())):
+            if await db.gw_joined(g["id"], uid):
+                return web.json_response({"ok": True, "already": True, "count": await db.gw_count(g["id"])}, headers={"Cache-Control": "no-store"})
+            return err(410, "closed", "Конкурс уже завершён.")
+        await db.gw_check_done(g["id"], uid)
+        return web.json_response({"ok": True, "count": await db.gw_count(g["id"])}, headers={"Cache-Control": "no-store"})
+
+    app.router.add_get("/giveaway", page)
+    app.router.add_get("/giveaway/api/info", info)
+    app.router.add_get("/giveaway/api/image", image)
+    app.router.add_post("/giveaway/api/join", join)
+
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# МОДУЛЬ: bot/panel_server.py
+# Веб-панель (Mini App): страница /panel и JSON API /panel/api/*.
+#
+# Безопасность: каждый запрос API несёт подписанный Telegram initData (заголовок X-Init-Data, проверка HMAC, свежесть ≤ 1 часа);
+# пользователь определяется только по подписанным данным. Права проверяются НА СЕРВЕРЕ при каждом запросе — по реальному статусу в
+# Telegram и рангам бота (то, что прислала страница, ничему не доверяем). Чат должен быть известен боту, а пользователь — иметь в нём
+# ранг; чужие и неизвестные чаты дают 403. Есть лимит частоты на пользователя, ответы не кэшируются и не содержат секретов.
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
 UID = web.RequestKey("uid", int)
 UINFO = web.RequestKey("uinfo", dict)
 PAGE_SIZE = 10
 TEXT_KEYS = ("rules", "welcome")
-MAX_TEXT = 2000
+MAX_TEXT__panel_server = 2000
 CSP = ("default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; img-src 'self' data:; "
        "connect-src 'self'; base-uri 'none'; form-action 'none'; "
        "frame-ancestors https://web.telegram.org https://webk.telegram.org https://webz.telegram.org")
@@ -85,7 +226,7 @@ def _int(v, name: str, lo: int | None = None, hi: int | None = None) -> int:
     return v
 
 
-async def _name(db: Database, uid: int | None) -> str:
+async def _name__panel_server(db: Database, uid: int | None) -> str:
     if not uid:
         return "—"
     return (await db.user_name(uid)) or f"id{uid}"
@@ -199,7 +340,7 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
         return lang.startswith("en")
 
     def spec(en: bool = False) -> list[dict]:
-        T = (lambda s: i18n.translate_button(s, "en")) if en else (lambda s: s)
+        T = (lambda s: translate_button(s, "en")) if en else (lambda s: s)
         pages = []
         for pid, (title, rows) in PAGES.items():
             pr = []
@@ -309,17 +450,17 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
     # ---------- тексты ----------
     async def texts_get(request):
         cid, _ = await chat_access(request, "настройки чата")
-        from bot import rules_text
+        pass  # (импорт убран: всё в одном модуле)
         texts = {k: (await db.get_text(cid, k)) or "" for k in TEXT_KEYS}
-        texts["rules"] = rules_text.to_plain(texts["rules"])      # оформление в панели не редактируется — показываем чистый текст
+        texts["rules"] = to_plain(texts["rules"])      # оформление в панели не редактируется — показываем чистый текст
         return web.json_response({"texts": texts})
 
     async def texts_set(request):
         cid, _ = await chat_access(request, "настройки чата")
         body = await _json(request)
         key, text = body.get("key"), body.get("text")
-        if key not in TEXT_KEYS or not isinstance(text, str) or len(text) > MAX_TEXT:
-            raise ApiError(400, f"Нужны key ({'|'.join(TEXT_KEYS)}) и text до {MAX_TEXT} символов")
+        if key not in TEXT_KEYS or not isinstance(text, str) or len(text) > MAX_TEXT__panel_server:
+            raise ApiError(400, f"Нужны key ({'|'.join(TEXT_KEYS)}) и text до {MAX_TEXT__panel_server} символов")
         await db.set_text(cid, key, text.strip() or None)
         return web.json_response({"ok": True})
 
@@ -327,7 +468,7 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
     async def ranks_get(request):
         cid, my = await chat_access(request)
         access = await db.get_access(cid)
-        ranks = [{"user_id": r["user_id"], "name": await _name(db, r["user_id"]), "rank": r["rank"]}
+        ranks = [{"user_id": r["user_id"], "name": await _name__panel_server(db, r["user_id"]), "rank": r["rank"]}
                  for r in await db.list_ranks(cid)]
         return web.json_response({
             "my_rank": my, "ranks": ranks,
@@ -340,7 +481,7 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
         if tid == request[UID] or tid == bot.id:
             raise ApiError(400, "Себе или боту ранг менять нельзя")
         try:
-            tg_status = (await ms.get_member(bot, cid, tid)).status
+            tg_status = (await get_member(bot, cid, tid)).status
         except Exception:
             tg_status = "member"
         if tg_status in ("administrator", "creator"):
@@ -352,7 +493,7 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
             raise ApiError(400, f"Выдать можно ранг не выше {min(actor - 1, MAX_ASSIGNABLE)}")
         now = int(time.time())
         await db.set_rank(cid, tid, new, request[UID], now)
-        await ux.sync_tag(bot, cid, tid, new)
+        await sync_tag(bot, cid, tid, new)
         await db.log_action(cid, request[UID], tid, "ранг", f"{old}→{new}", now)
         return web.json_response({"ok": True})
 
@@ -380,8 +521,8 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
         for r in await db.list_reports(cid, 50):
             items.append({"id": r["id"], "status": r["status"], "ts": r["ts"], "text": r["text"], "reason": r["reason"],
                           "message_id": r["message_id"],
-                          "reporter": {"id": r["reporter"], "name": await _name(db, r["reporter"])},
-                          "target": {"id": r["target"], "name": await _name(db, r["target"])},
+                          "reporter": {"id": r["reporter"], "name": await _name__panel_server(db, r["reporter"])},
+                          "target": {"id": r["target"], "name": await _name__panel_server(db, r["target"])},
                           "handled_by": r["handled_by"]})
         return web.json_response({"reports": items})
 
@@ -423,7 +564,7 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
         now = int(time.time())
         total = await db.count_mod_history(cid, uid)
         items = [{"ts": r["ts"], "action": r["action"], "duration": r["duration"], "reason": r["reason"],
-                  "actor": {"id": r["actor_id"], "name": await _name(db, r["actor_id"])}}
+                  "actor": {"id": r["actor_id"], "name": await _name__panel_server(db, r["actor_id"])}}
                  for r in await db.list_mod_history(cid, uid, PAGE_SIZE, page * PAGE_SIZE)]
         active = {}
         for kind in ("ban", "mute"):
@@ -431,7 +572,7 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
             if st:
                 active[kind] = st["until"]
         rt_total, rt_open = await db.count_reports_against(cid, uid)
-        return web.json_response({"user": {"id": uid, "name": await _name(db, uid)}, "total": total, "page": page,
+        return web.json_response({"user": {"id": uid, "name": await _name__panel_server(db, uid)}, "total": total, "page": page,
                                   "pages": max((total + PAGE_SIZE - 1) // PAGE_SIZE, 1), "items": items,
                                   "warns": await db.get_warns(cid, uid, now), "active": active,
                                   "reports": {"total": rt_total, "open": rt_open}})
@@ -446,11 +587,11 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
         if not 1 <= hours <= 24 * 90:
             raise ApiError(400, "hours: от 1 до 2160")
         since = int(time.time()) - hours * HOUR
-        bucket = HOUR if hours <= 72 else DAY
+        bucket = HOUR if hours <= 72 else DAY__db
         series = await db.activity_series(cid, since, bucket)
         total, top = await db.count_by_user(cid, since, 15)
         return web.json_response({"bucket": "hour" if bucket == HOUR else "day", "series": series, "total": total,
-                                  "top": [{"user_id": u, "name": await _name(db, u), "n": n} for u, n in top]})
+                                  "top": [{"user_id": u, "name": await _name__panel_server(db, u), "n": n} for u, n in top]})
 
     async def charts_get(request):
         cid, _ = await chat_access(request)
@@ -461,7 +602,7 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
             off = int(datetime.now(ZoneInfo(s["tz"])).utcoffset().total_seconds())
         except Exception:
             off = 0
-        data = await db.charts_data(cid, int(time.time()) - 30 * DAY, off)
+        data = await db.charts_data(cid, int(time.time()) - 30 * DAY__db, off)
         data["members"] = await db.member_count(cid)
         return web.json_response(data)
 
@@ -479,13 +620,13 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
             if duration is None:
                 raise ApiError(400, "Срок: например 1д, 7д, 12ч; пусто — навсегда")
         try:
-            targets, invalid = bulk.parse_targets(body.get("targets"))
-        except bulk.BulkError as e:
+            targets, invalid = parse_targets(body.get("targets"))
+        except BulkError as e:
             raise ApiError(400, str(e))
         if not targets:
             raise ApiError(400, "Не нашёл ни одного id или @ника")
         try:
-            res = await bulk.bulk_ban(bot, db, cid, request[UID], targets, reason.strip(), duration, int(time.time()))
+            res = await bulk_ban__bulk(bot, db, cid, request[UID], targets, reason.strip(), duration, int(time.time()))
         except PermissionError as e:
             raise ApiError(403, str(e))
         out = [{"target": o.target, "status": o.status, "detail": o.detail, "user_id": o.user_id, "name": o.name}
@@ -509,30 +650,30 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
     # ---------- очистка чата ----------
     async def purge_access(request) -> int:
         cid, rank = await chat_access(request, "очистить чат")
-        if rank < purge.MIN_RANK:
+        if rank < MIN_RANK:
             raise ApiError(403, "forbidden")
         return cid
 
     async def purge_get(request):
         cid = await purge_access(request)
-        job = purge.get_job(cid)
+        job = get_job(cid)
         return web.json_response(job.public() if job else {"state": "idle"})
 
     async def purge_start(request):
         cid = await purge_access(request)
         phrase = (await _json(request)).get("confirm")
-        if not isinstance(phrase, str) or phrase.strip().upper() != purge.CONFIRM_PHRASE:
-            raise ApiError(400, f"Для подтверждения введите: {purge.CONFIRM_PHRASE}")
+        if not isinstance(phrase, str) or phrase.strip().upper() != CONFIRM_PHRASE:
+            raise ApiError(400, f"Для подтверждения введите: {CONFIRM_PHRASE}")
         try:
-            job = await purge.start_purge(bot, db, cid, request[UID])
-        except purge.PurgeError as e:
+            job = await start_purge(bot, db, cid, request[UID])
+        except PurgeError as e:
             raise ApiError(409, str(e))
         await db.log_action(cid, request[UID], 0, "очистка чата", "запущена через веб-панель", int(time.time()))
         return web.json_response(job.public())
 
     async def purge_stop(request):
         cid = await purge_access(request)
-        if not purge.stop_job(cid):
+        if not stop_job(cid):
             raise ApiError(404, "Очистка сейчас не идёт")
         return web.json_response({"ok": True})
 
@@ -590,16 +731,16 @@ def add_panel_routes(app: web.Application, ctx: PanelContext) -> None:
         await owner_only(request)
         state = {"ai": ctx.rt.flag("ai"), "stt": ctx.rt.flag("stt"), "nsfw": ctx.rt.flag("nsfw"),
                  "aimod": ctx.rt.flag("aimod"), "maint": ctx.rt.maintenance}
-        return web.json_response({"flags": [{"key": k, "label": i18n.translate_button(lbl, "en") if want_en(request) else lbl, "value": state[k]}
-                                            for k, (_, lbl) in owner_mod.FLAGS.items()]})
+        return web.json_response({"flags": [{"key": k, "label": translate_button(lbl, "en") if want_en(request) else lbl, "value": state[k]}
+                                            for k, (_, lbl) in FLAGS.items()]})
 
     async def owner_flags_set(request):
         oid = await owner_only(request)
         body = await _json(request)
         key, value = body.get("key"), _int(body.get("value"), "value", 0, 1)
-        if not isinstance(key, str) or key not in owner_mod.FLAGS:
+        if not isinstance(key, str) or key not in FLAGS:
             raise ApiError(400, "Неизвестная функция")
-        await db.set_global(owner_mod.FLAGS[key][0], value)
+        await db.set_global(FLAGS[key][0], value)
         ctx.rt.apply_globals(await db.get_global())
         await db.log_owner(oid, "функция", f"{key}={value} (веб-панель)", int(time.time()))
         return web.json_response({"ok": True})

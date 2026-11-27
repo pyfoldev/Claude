@@ -1,113 +1,165 @@
-"""ТОЧКА ВХОДА БОТА (python -m bot.main).
+"""Точка входа: сборка диспетчера, подключение роутеров и middleware, фоновые задачи, запуск.
 
-КАК ЭТОТ ФАЙЛ УСТРОЕН — где что менять:
-  [1] ИМПОРТЫ ХЕНДЛЕРОВ      — добавили новый файл handlers/xxx.py → импортируйте его здесь (блок «ХЕНДЛЕРЫ»).
-  [2] main()  шаги по порядку:
-        2.1 конфиг и БД                      (config.py, db.py)
-        2.2 объекты в dp[...]                — всё, что хендлер может запросить параметром (db, ai, rt, http…).
-                                               Новый общий объект: dp["name"] = obj → в хендлере `async def f(m, name)`.
-        2.3 MIDDLEWARE                       — порядок важен! см. комментарии у каждой строки.
-        2.4 РОУТЕРЫ (ROUTERS)                — порядок = приоритет: первый подошедший хендлер «съедает» сообщение.
-        2.5 веб-сервер (капча, панель, конкурсы)
-        2.6 ФОНОВЫЕ ЗАДАЧИ (jobs)            — сюда добавлять циклы «раз в N минут».
-        2.7 запуск: webhook или polling
+Файл собран из нескольких исходных модулей; каждый начинается с шапки «МОДУЛЬ: bot/<путь>.py».
+Ищите по слову «МОДУЛЬ:» (Ctrl+F). Пути вида handlers/xxx.py в комментариях — это такие разделы.
+
+КАРТА ФАЙЛОВ (где искать разделы):
+  data.py: audit, backup, db, pg
+  core.py: perf, __init__, alerts, cleanup, config, emoji_inject, emoji, fmt, gender, i18n_en, i18n, keyboards, links, members, metrics, parsing, plans, punish_gifs, ranks, rich, rich_ui, runtime, style, targets, toggles, ttl, updatequeue, ux, weather, webhook, wipe
+  services.py: ai, aimod, cards, chatmind, collectibles, downloader, pair.economy, pair.baby, pair.data, pair.gifts, pair.house, pair.kids, pair.pets, pair.premium, pair.quests, pair.service, family, gifs, giveaway, imagegen, media, mog, nsfw, rp_data, services
+  moderation.py: activity, mod_service, bulk, captcha_server, cas, diagnostics, dupes, filters, guestbots, handlers.settings, handlers.activity, handlers.ai, handlers.aimod, rules_text, handlers.chatinfo, raid, handlers.captcha, handlers.chatfilters, handlers.cleanup, handlers.download, handlers.history, handlers.images, handlers.inline, handlers.logchat, handlers.memory, handlers.menu, handlers.moderation, handlers.owner, handlers.polls, handlers.premium, purge, handlers.purge, handlers.ranks, handlers.social, handlers.reports, middlewares.tracker, phishing, spam, middlewares.guard, rules, middlewares.rules, handlers.rulecmds, handlers.scan, handlers.setup, handlers.stats, handlers.suggest, handlers.topics, handlers.webpanel, middlewares.blocklist, middlewares.counter, middlewares.memory, middlewares.prefix, middlewares.quiet, middlewares.ratelimit, profile_card, scheduler
+  community.py: games.checkers, games.chessgame, games.seabattle, boardgames, games.garden, games.rps, games.slots, games.tictactoe, handlers.economy, handlers.boardgames, handlers.collect, handlers.duels, handlers.entertainment, handlers.family, handlers.fun, handlers.games, handlers.garden, handlers.giveaway, mafia, handlers.mafia, handlers.mog, handlers.pair, handlers.quotes, handlers.rp, handlers.services, handlers.votes
+  web.py: giveaway_server, panel_server
 """
+
+import aiohttp
 import asyncio
-from contextlib import AsyncExitStack
-import signal
 import logging
 import math
 import os
+import signal
 import sys
 import time
-
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 from aiohttp import web
+from contextlib import AsyncExitStack
 
-import aiohttp
+# имена из более ранних файлов
+from bot.data import Auditor, Database, backup_loop
+from bot.core import (
+    Alerter,
+    CommandAliasMiddleware,
+    EmojiSession,
+    Metrics,
+    MetricsMiddleware,
+    Runtime,
+    TranslateMiddleware,
+    UpdateQueue,
+    clear_marker,
+    load_config,
+    make_error_handler,
+    prune_stale,
+    register_webhook,
+    set_marker_and_check_crash,
+    supervise,
+    sweep_loop,
+    webhook_target,
+    webhook_watch,
+)
+from bot.services import AiClient, ImageGen, NsfwDetector, PairService
+from bot.moderation import (
+    BlockMiddleware,
+    ChatMemoryMiddleware,
+    CounterMiddleware,
+    GuardMiddleware,
+    MembershipMiddleware,
+    NoriPrefixMiddleware,
+    QuietTopicMiddleware,
+    RateLimitMiddleware,
+    RulesMiddleware,
+    UserTrackerMiddleware,
+    _last__chatinfo,
+    _last_ask,
+    _passed,
+    activity_loop,
+    build_app,
+    captcha_watchdog,
+    make_on_pass,
+    router__captcha,
+    router__cas,
+    router__chatfilters,
+    router__chatinfo,
+    router__download,
+    router__dupes,
+    router__guestbots,
+    router__handlers_activity,
+    router__handlers_ai,
+    router__handlers_aimod,
+    router__handlers_cleanup,
+    router__handlers_memory,
+    router__handlers_premium,
+    router__handlers_purge,
+    router__handlers_ranks,
+    router__history,
+    router__images,
+    router__inline,
+    router__logchat,
+    router__menu,
+    router__moderation,
+    router__owner,
+    router__polls,
+    router__reports,
+    router__rulecmds,
+    router__scan,
+    router__settings,
+    router__setup,
+    router__social,
+    router__stats,
+    router__suggest,
+    router__topics,
+    router__webpanel,
+    scheduler_loop,
+    timer_watchdog,
+)
+from bot.community import (
+    _cool__handlers_economy,
+    _last__entertainment,
+    _last__fun,
+    _last__rp,
+    bgame_watchdog,
+    duel_watchdog,
+    family_watchdog,
+    giveaway_watchdog,
+    guard__handlers_mafia,
+    pair_watchdog,
+    router__collect,
+    router__duels,
+    router__entertainment,
+    router__fun,
+    router__handlers_boardgames,
+    router__handlers_economy,
+    router__handlers_family,
+    router__handlers_games,
+    router__handlers_garden,
+    router__handlers_giveaway,
+    router__handlers_mafia,
+    router__handlers_mog,
+    router__handlers_pair,
+    router__handlers_services,
+    router__quotes,
+    router__rp,
+    router__votes,
+)
+from bot.web import PanelContext, add_giveaway_routes, add_panel_routes
 
-from bot.ai import AiClient
-from bot.alerts import Alerter, clear_marker, make_error_handler, set_marker_and_check_crash, supervise
-from bot.audit import Auditor
-from bot.backup import backup_loop
-from bot import members
-from bot.webhook import register_webhook, webhook_target, webhook_watch
-from bot.captcha_server import build_app
-from bot.panel_server import PanelContext, add_panel_routes
-from bot.config import load_config
-from bot.emoji_inject import EmojiSession
-from bot.db import Database
-# ======================= [1] ХЕНДЛЕРЫ (импорт модулей с командами) =======================
-# Новый модуль handlers/xxx.py: добавьте сюда `from bot.handlers import xxx as xxx_handlers`
-# и затем — в список ROUTERS ниже (иначе команды не заработают).
-from bot.handlers import ai as ai_handlers
-from bot.handlers import owner as owner_handlers
-from bot.handlers import captcha, duels, fun, games, menu, moderation, settings, stats
-from bot.handlers import chatinfo as chatinfo_handlers
-from bot.handlers import economy as economy_handlers
-from bot.handlers import entertainment as fun_handlers
-from bot.handlers import inline as inline_handlers, memory as memory_handlers, polls as polls_handlers
-from bot import dupes as dupes_module
-from bot import guestbots as guestbots_module
-from bot import cas as cas_module
-from bot.handlers import pair as pair_handlers
-from bot.pair.service import PairService
-from bot.handlers import votes as vote_handlers
-from bot.handlers import cleanup as cleanup_handlers
-from bot.handlers import rulecmds as rulecmds_handlers
-from bot.handlers import services as services_handlers
-from bot.handlers import boardgames as boardgames_handlers
-from bot.handlers import collect as collect_handlers
-from bot import scheduler as scheduler_module
-from bot.middlewares.rules import MembershipMiddleware, RulesMiddleware
-from bot.middlewares.ratelimit import RateLimitMiddleware
-from bot.handlers import mafia as mafia_handlers
-from bot.handlers import activity as activity_handlers
-from bot import activity as activity_module
-from bot.handlers import purge as purge_handlers
-from bot.handlers import family as family_handlers
-from bot.handlers import ranks as rank_handlers
-from bot.handlers import rp as rp_handlers
-from bot.handlers import scan as scan_handlers
-from bot.handlers import social as social_handlers
-from bot.handlers import garden as garden_handlers
-from bot.handlers import setup as setup_handlers
-from bot.handlers import history as history_handlers
-from bot.handlers import logchat as logchat_handlers
-from bot.handlers import reports as reports_handlers
-from bot.handlers import chatfilters as chatfilters_handlers
-from bot.handlers import aimod as aimod_handlers
-from bot.handlers import webpanel as webpanel_handlers
-from bot.handlers import giveaway as giveaway_handlers
-from bot.handlers import suggest as suggest_handlers
-from bot.handlers import images as images_handlers
-from bot.handlers import download as download_handlers
-from bot.handlers import premium as premium_handlers
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# МОДУЛЬ: bot/main.py
+# ТОЧКА ВХОДА БОТА (python -m bot.main).
+#
+# КАК ЭТОТ ФАЙЛ УСТРОЕН — где что менять (шаги внутри main() идут по порядку):
+#   2.1 конфиг и БД                      — раздел «МОДУЛЬ: bot/config.py» (core.py), «bot/db.py» (data.py)
+#   2.2 объекты в dp[...]                — всё, что хендлер может запросить параметром (db, ai, rt, http…).
+#                                          Новый общий объект: dp["name"] = obj → в хендлере `async def f(m, name)`.
+#   2.3 MIDDLEWARE                       — порядок важен! см. комментарии у каждой строки.
+#   2.4 РОУТЕРЫ (ROUTERS)                — порядок = приоритет: первый подошедший хендлер «съедает» сообщение.
+#   2.5 веб-сервер (капча, панель, конкурсы)
+#   2.6 ФОНОВЫЕ ЗАДАЧИ (jobs)            — сюда добавлять циклы «раз в N минут».
+#   2.7 запуск: webhook или polling
+#
+# Как добавить команду: напишите хендлеры с новым `Router(...)` в конец community.py (или moderation.py),
+# импортируйте его здесь из bot.community и добавьте в список ROUTERS (строго выше блока ИИ).
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+# ======================= ХЕНДЛЕРЫ (команды) =======================
+# Все модули команд (bot/handlers/*.py) теперь — разделы «МОДУЛЬ: …» внутри moderation.py и community.py.
+# Новый роутер надо добавить в список ROUTERS ниже (иначе команды не заработают).
 # ======================= прочие сервисы =======================
-from bot.imagegen import ImageGen
-from bot.handlers import quotes as quotes_handlers
-from bot.handlers import mog as mog_handlers
-from bot.giveaway_server import add_giveaway_routes
-from bot.metrics import Metrics, MetricsMiddleware
-from bot.updatequeue import UpdateQueue
 # ======================= MIDDLEWARE (прослойки до хендлеров) =======================
-# Новая прослойка: файл middlewares/xxx.py, импорт здесь,
-# подключение — в разделе 2.3 внутри main().
-from bot.middlewares.blocklist import BlockMiddleware
-from bot.middlewares.counter import CounterMiddleware
-from bot.middlewares.guard import GuardMiddleware
-from bot.middlewares.memory import ChatMemoryMiddleware
-from bot.middlewares.prefix import NoriPrefixMiddleware
-from bot.ttl import prune_stale
-from bot.nsfw import NsfwDetector
-from bot.runtime import Runtime
-from bot.middlewares.tracker import UserTrackerMiddleware
-from bot import i18n
-from bot.middlewares.quiet import QuietTopicMiddleware
-from bot.handlers import topics as topics_handlers
+# Новая прослойка: класс в moderation.py (раздел «МОДУЛЬ: bot/middlewares/…»), подключение — в разделе 2.3 внутри main().
 
 
 # ======================= ФОНОВЫЕ ЦИКЛЫ =======================
@@ -121,9 +173,9 @@ async def rollup_loop(db: Database) -> None:
             await db.rollup_old(int(time.time()))
             await db.prune_old(int(time.time()))
             await db.optimize()                       # статистика для планировщика запросов — раз в сутки
-            for d, age in ((fun._last, 3600), (chatinfo_handlers._last, 3600), (ai_handlers._last_ask, 3600),
-                           (economy_handlers._cool, 86400), (rp_handlers._last, 3600),
-                           (fun_handlers._last, 3600), (captcha._passed, 3600)):
+            for d, age in ((_last__fun, 3600), (_last__chatinfo, 3600), (_last_ask, 3600),
+                           (_cool__handlers_economy, 86400), (_last__rp, 3600),
+                           (_last__entertainment, 3600), (_passed, 3600)):
                 prune_stale(d, age, time.time())
         except Exception:
             logging.exception("rollup failed")
@@ -210,7 +262,7 @@ async def main() -> bool:
         stack.push_async_callback(bot_session.close)
         bot = Bot(cfg.bot_token, session=bot_session, default=DefaultBotProperties(parse_mode=ParseMode.HTML,
                                                                                       link_preview_is_disabled=True))   # ссылки-имена (t.me/ник) не должны разворачиваться в превью
-        bot.session.middleware(i18n.TranslateMiddleware(db))           # английский интерфейс для чатов с языком en
+        bot.session.middleware(TranslateMiddleware(db))           # английский интерфейс для чатов с языком en
         migrated = await PairService(db).migrate_legacy()                # старые браки и отношения → пары (одноразово)
         if migrated["marriage"] or migrated["relation"]:
             logging.info("пары: перенесено браков %s, отношений %s", migrated["marriage"], migrated["relation"])
@@ -279,7 +331,7 @@ async def main() -> bool:
         dp.message.outer_middleware(QuietTopicMiddleware(db))
         dp.message.outer_middleware(ChatMemoryMiddleware(db))    # после защиты: удалённый спам в память не попадает
         dp.message.outer_middleware(NoriPrefixMiddleware())
-        dp.message.outer_middleware(i18n.CommandAliasMiddleware(db))   # после префикса: «nori, ban @x» тоже понятно  # последним: счётчик и защита видят исходный текст
+        dp.message.outer_middleware(CommandAliasMiddleware(db))   # после префикса: «nori, ban @x» тоже понятно  # последним: счётчик и защита видят исходный текст
         dp.edited_message.outer_middleware(guard)  # правкой нельзя обойти проверку
         # --- 2.4 РОУТЕРЫ (ROUTERS) ---
         # ПОРЯДОК ВАЖЕН: Telegram-событие идёт по списку сверху вниз, первый подошедший хендлер выигрывает.
@@ -289,72 +341,72 @@ async def main() -> bool:
         # captcha первым: «/start cap_…» не должен попасть в общее меню
         ROUTERS = [
             # --- служебное: защита мафии, владелец, капча, веб-панель ---
-            mafia_handlers.guard,
-            owner_handlers.router,
-            captcha.router,
-            webpanel_handlers.router,
+            guard__handlers_mafia,
+            router__owner,
+            router__captcha,
+            router__webpanel,
             # --- розыгрыши, предложения, Premium, медиа ---
-            mafia_handlers.router,
-            giveaway_handlers.router,
-            suggest_handlers.router,
-            premium_handlers.router,
-            images_handlers.router,
-            download_handlers.router,
+            router__handlers_mafia,
+            router__handlers_giveaway,
+            router__suggest,
+            router__handlers_premium,
+            router__images,
+            router__download,
             # --- меню, инлайн, память, опросы, темы, защита от дублей/гостевых ботов/CAS ---
-            menu.router,
-            inline_handlers.router,
-            memory_handlers.router,
-            polls_handlers.router,
-            topics_handlers.router,
-            dupes_module.router,
-            guestbots_module.router,
-            cas_module.router,
+            router__menu,
+            router__inline,
+            router__handlers_memory,
+            router__polls,
+            router__topics,
+            router__dupes,
+            router__guestbots,
+            router__cas,
             # --- пары, настройки, правила, мастер настройки, ранги, активность, чистка ---
-            pair_handlers.router,
-            settings.router,
-            rulecmds_handlers.router,
-            setup_handlers.router,
-            rank_handlers.router,
-            activity_handlers.router,
-            cleanup_handlers.router,
-            purge_handlers.router,
-            chatinfo_handlers.router,
-            scan_handlers.router,
+            router__handlers_pair,
+            router__settings,
+            router__rulecmds,
+            router__setup,
+            router__handlers_ranks,
+            router__handlers_activity,
+            router__handlers_cleanup,
+            router__handlers_purge,
+            router__chatinfo,
+            router__scan,
             # --- модерация и логи ---
-            social_handlers.router,
-            moderation.router,
-            history_handlers.router,
-            logchat_handlers.router,
-            reports_handlers.router,
-            chatfilters_handlers.router,
-            aimod_handlers.router,
+            router__social,
+            router__moderation,
+            router__history,
+            router__logchat,
+            router__reports,
+            router__chatfilters,
+            router__handlers_aimod,
             # --- статистика, цитаты ---
-            stats.router,
-            quotes_handlers.router,
-            mog_handlers.router,
+            router__stats,
+            router__quotes,
+            router__handlers_mog,
             # --- игры и экономика ---
-            games.router,
-            duels.router,
-            boardgames_handlers.router,
-            collect_handlers.router,
-            economy_handlers.router,
-            vote_handlers.router,
+            router__handlers_games,
+            router__duels,
+            router__handlers_boardgames,
+            router__collect,
+            router__handlers_economy,
+            router__votes,
             # --- РП, семья, огород, развлечения, сервисы ---
-            rp_handlers.router,
-            family_handlers.router,
-            garden_handlers.router,
-            fun_handlers.router,
-            services_handlers.router,
-            fun.router,
+            router__rp,
+            router__handlers_family,
+            router__handlers_garden,
+            router__entertainment,
+            router__handlers_services,
+            router__fun,
             # >>> СЮДА добавляйте свой роутер: xxx_handlers.router, (строго выше блока ИИ!) <<<
             # --- ИИ — ПОСЛЕДНИМ (ловит «ии, …» и обращения по имени) ---
-            ai_handlers.router,
+            router__handlers_ai,
         ]
         for r in ROUTERS:
             dp.include_router(r)
 
         # --- 2.5 ВЕБ-СЕРВЕР: капча, мини-приложение конкурсов, веб-панель. Новые HTTP-маршруты: app.router.add_get/post(...) ---
-        app = build_app(db, cfg.bot_token, captcha.make_on_pass(bot, db, cfg.webapp_url))
+        app = build_app(db, cfg.bot_token, make_on_pass(bot, db, cfg.webapp_url))
         add_giveaway_routes(app, db, bot, cfg.bot_token)
         add_panel_routes(app, PanelContext(bot=bot, db=db, bot_token=cfg.bot_token, owner_ids=cfg.owner_ids, rt=rt, ai=ai,
                                            webapp_url=cfg.webapp_url,
@@ -368,18 +420,18 @@ async def main() -> bool:
         # --- 2.6 ФОНОВЫЕ ЗАДАЧИ ---
         # Формат: "название для логов": lambda: функция_цикла(аргументы). Добавить свою — одна строка в словарь jobs ниже.
         backup_dir = os.environ.get("BACKUP_DIR") or os.path.join(data_dir, "backups")
-        jobs = {"капча": lambda: captcha.captcha_watchdog(bot, db),
-                "дуэли": lambda: duels.duel_watchdog(bot, db),
-                "настольные игры": lambda: boardgames_handlers.bgame_watchdog(bot, db),
-                "семья": lambda: family_handlers.family_watchdog(bot, db),
-                "пары": lambda: pair_handlers.pair_watchdog(bot, db),
-                "таймеры": lambda: social_handlers.timer_watchdog(bot, db),
+        jobs = {"капча": lambda: captcha_watchdog(bot, db),
+                "дуэли": lambda: duel_watchdog(bot, db),
+                "настольные игры": lambda: bgame_watchdog(bot, db),
+                "семья": lambda: family_watchdog(bot, db),
+                "пары": lambda: pair_watchdog(bot, db),
+                "таймеры": lambda: timer_watchdog(bot, db),
                 "статистика": lambda: rollup_loop(db),
                 "сброс счётчиков": lambda: flush_loop(db, guard),
-                "участники": lambda: members.sweep_loop(bot, db),
-                "активность": lambda: activity_module.activity_loop(bot, db, ai if ai.has_river else None),
-                "конкурсы": lambda: giveaway_handlers.giveaway_watchdog(bot, db),
-                "правила чата": lambda: scheduler_module.scheduler_loop(bot, db),
+                "участники": lambda: sweep_loop(bot, db),
+                "активность": lambda: activity_loop(bot, db, ai if ai.has_river else None),
+                "конкурсы": lambda: giveaway_watchdog(bot, db),
+                "правила чата": lambda: scheduler_loop(bot, db),
                 "бэкап": lambda: backup_loop(db, backup_dir, backup_keep, alerter.alert)}
         tasks = []
         stack.push_async_callback(_cancel_tasks, tasks)
@@ -441,7 +493,7 @@ async def main() -> bool:
             clear_marker(marker)
 
 
-def _run(coro):
+def _run__main(coro):
     """uvloop — быстрый цикл событий (сеть, aiohttp, aiosqlite); нет uvloop (Windows, локальная разработка) — обычный."""
     try:
         import uvloop
@@ -451,5 +503,5 @@ def _run(coro):
 
 
 if __name__ == "__main__":
-    if _run(main()):
+    if _run__main(main()):
         os.execv(sys.executable, [sys.executable, "-m", "bot.main"])  # перезагрузка по команде владельца

@@ -42,14 +42,6 @@ def main() -> None:
     sys.path[:] = [root] + [p for p in sys.path if not p.endswith(".pyz")]
     # перезапуск по команде владельца делает `python -m bot.main` — ему нужен тот же путь к коду
     os.environ["PYTHONPATH"] = root + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else "")
-    if len(sys.argv) > 1 and sys.argv[1] == "probe":          # python bot.pyz probe <chat_id> — диагностика эмодзи
-        sys.argv = [sys.argv[0]] + sys.argv[2:]
-        runpy.run_module("bot.probe_emoji", run_name="__main__", alter_sys=True)
-        return
-    if len(sys.argv) > 1 and sys.argv[1] == "gifs":           # python bot.pyz gifs — скачать гифки Gifukai в data/gifs
-        sys.argv = [sys.argv[0]] + sys.argv[2:]
-        runpy.run_module("bot.gifs_fetch", run_name="__main__", alter_sys=True)
-        return
     runpy.run_module("bot.main", run_name="__main__", alter_sys=True)
 
 
