@@ -1,9 +1,0 @@
-# Настройки инструментов разработки (на запуск бота не влияют)
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-
-[tool.ruff]
-line-length = 140            # строки в проекте длинные — это нормально
-target-version = "py312"
-extend-exclude = ["templates"]   # шаблоны содержат «вставьте сюда» заглушки

@@ -30,13 +30,13 @@ Middleware могут добавлять свои (например `nori_addres
 | Только группы | `F.chat.type.in_({"group", "supergroup"})` |
 | Нажатие кнопки | `@router.callback_query(F.data.startswith("префикс:"))` |
 | Вход участника | `ChatMemberUpdatedFilter(JOIN_TRANSITION)` (см. `handlers/captcha.py`) |
-| Своё условие | класс-`Filter` (`templates/custom_filter_template.py`) |
+| Своё условие | класс-`Filter` (образец — `toggles.Enabled`) |
 | Вся группа вкл/выкл | `router.message.filter(Enabled("ключ_on"))` |
 
 ## Порядок = приоритет
 
 Роутеры проверяются по порядку в `ROUTERS` (`main.py`). Хендлер, который «съел» сообщение, останавливает цепочку.
-Поэтому: узкие команды выше, универсальные (`ИИ`) — самыми последними. Актуальный порядок: `docs/ROUTERS.md`.
+Поэтому: узкие команды выше, универсальные (`ИИ`) — самыми последними. Актуальный порядок — список `ROUTERS` в `main.py`.
 Если нужно, чтобы хендлер пропустил сообщение дальше (не «съел» его) — вызовите `raise SkipHandler` (`from aiogram.dispatcher.event.bases import SkipHandler`)
 или сделайте фильтр уже, чтобы он не срабатывал.
 
@@ -51,7 +51,7 @@ ok, why = await ms.can_act(bot, chat_id, actor, target, "can_restrict_members", 
 ## Как отвечать
 
 `ux.tell` (замечание автору) · `ux.tell_cb` (ответ на кнопку) · `ux.react` (реакция) · `message.reply/answer` (публично).
-Оформление — `style.*` (`docs/STYLE_GUIDE.md`).
+Оформление — функции из `style.py` (`head`, `ok`, `warn`, `fail`, `kv`).
 
 ## Callback-кнопки
 

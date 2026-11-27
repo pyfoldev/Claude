@@ -1,14 +1,11 @@
 # Короткие команды: `make help`
-.PHONY: help check docs test run pyz new
+.PHONY: help check test run pyz new
 
 help:        ## показать команды
 	@grep -E '^[a-z]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ —/'
 
 check:       ## проверить целостность проекта
 	python tools/check_project.py
-
-docs:        ## перегенерировать docs/*.md из кода
-	python tools/gen_docs.py
 
 test:        ## автотесты (нужен pytest)
 	python -m pytest -q

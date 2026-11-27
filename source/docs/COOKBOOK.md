@@ -4,7 +4,7 @@
 |---|---|
 | Изменить текст ответа бота | найдите фразу: `grep -rn "кусок текста" bot/` и правьте строку; перевод — `i18n.py` |
 | Изменить баланс игры (награды, кулдауны) | константы вверху `handlers/economy.py`, `db.py` (`START_BALANCE`, `BONUS_AMOUNT`), `games/*.py` |
-| Добавить РП-действие | строка в `rp_data.py` (`templates/rp_action_template.py`) |
+| Добавить РП-действие | строка в `rp_data.py` (формат — в шапке файла) |
 | Добавить команду в справку «меню» | `handlers/menu.py` → `SECTION_DATA` |
 | Новая кнопка в главном меню | `menu.py` → `MAIN_ROWS` + запись в `SECTION_DATA` |
 | Изменить приветствие в личке | `menu.py` → `onboarding_screen` |
@@ -14,7 +14,7 @@
 | Ограничить команду рангом | `ranks.DEFAULT_ACCESS` + `need_rank` (`templates/admin_command_template.py`) |
 | Новая таблица / запрос | `templates/db_methods_template.py` |
 | Новая фоновая задача | `templates/job_template.py` → `jobs` в `main.py` |
-| Новая переменная `.env` | `templates/env_variable_template.md` |
+| Новая переменная `.env` | `config.py` (поле + `load_config`) и `.env.example` |
 | Новый API-метод для панели | `templates/web_route_template.py` |
 | Поменять лимиты антиспама по умолчанию | `db.py` → `DEFAULT_SETTINGS` (`spam_*`), логика — `spam.py` |
 | Поменять лимит команд в секунду | `middlewares/ratelimit.py` (`PER_SEC`, `PER_MIN`) |

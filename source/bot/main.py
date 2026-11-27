@@ -11,7 +11,7 @@
         2.5 веб-сервер (капча, панель, конкурсы)
         2.6 ФОНОВЫЕ ЗАДАЧИ (jobs)            — сюда добавлять циклы «раз в N минут».
         2.7 запуск: webhook или polling
-Шаблоны для нового хендлера/middleware/задачи — в папке templates/, подробно — EXTENDING.md.
+Шаблоны для нового хендлера/middleware/задачи — в папке templates/, подробно — docs/.
 """
 import asyncio
 from contextlib import AsyncExitStack

@@ -4,7 +4,7 @@
 - Значения по умолчанию: `db.py` → `DEFAULT_SETTINGS`.
 - Экран: `handlers/settings.py` → `PAGES` (строки `("toggle", ключ, подпись)` и `("choice", ключ, подпись, [(текст, значение)])`).
 - Чтение: `(await db.get_settings(chat_id))["ключ"]`; запись: `await db.set_setting(chat_id, "ключ", значение, actor_id)` (пишется в журнал).
-- Полный список — `docs/SETTINGS.md` (генерируется). Рецепт — `templates/setting_template.md`.
+- Рецепт — `templates/setting_template.md`.
 - Тонкие команды-настройки текстом («капча время 45м», «норма 300») — `handlers/rulecmds.py`, `handlers/chatinfo.py`.
 
 ## 2. Включатели групп команд

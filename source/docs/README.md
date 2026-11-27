@@ -12,11 +12,5 @@
 | [WEBPANEL](WEBPANEL.md) | веб-панель, капча, конкурсы |
 | [DEPLOY](DEPLOY.md) | Docker, webhook, PostgreSQL, бэкапы |
 | [TROUBLESHOOTING](TROUBLESHOOTING.md) | «не работает» → причина |
-| [STYLE_GUIDE](STYLE_GUIDE.md) | стиль кода и сообщений |
-| [TESTING](TESTING.md) | проверки и тесты |
-| [TOOLS](TOOLS.md) | `tools/` и `Makefile` |
 | [COOKBOOK](COOKBOOK.md) | «хочу сделать X» → куда идти |
-| [GLOSSARY](GLOSSARY.md) | термины |
 
-Автогенерируемые справочники (не править руками; `python tools/gen_docs.py`):
-[COMMANDS](COMMANDS.md) · [SETTINGS](SETTINGS.md) · [ROUTERS](ROUTERS.md) · [DB_TABLES](DB_TABLES.md) · [ENV](ENV.md)

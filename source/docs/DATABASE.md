@@ -2,7 +2,7 @@
 
 - Файл: `bot/db.py` (класс `Database`), PostgreSQL-адаптер — `bot/pg.py`, перенос SQLite → PG — `bot/migrate.py`.
 - Выбор: `DATABASE_URL=postgresql://…` → PostgreSQL, иначе файл `DB_PATH` (SQLite).
-- Список таблиц: `docs/DB_TABLES.md` (генерируется `python tools/gen_docs.py`).
+- Список таблиц — строка `SCHEMA` в `db.py`.
 
 ## Правила
 
