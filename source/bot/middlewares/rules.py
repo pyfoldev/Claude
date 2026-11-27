@@ -22,9 +22,10 @@ from bot.middlewares.guard import AdminCache, channel_sender
 from bot.middlewares.tracker import SERVICE_IDS
 from bot.parsing import ModCommand
 
-CACHE_TTL = 30
-NOTICE_EVERY = 30
-FAQ_COOLDOWN = 60
+# ===== ТАЙМИНГИ (сек) =====
+CACHE_TTL = 30        # сколько живёт кэш правил чата (после команд-изменений сбрасывается через invalidate())
+NOTICE_EVERY = 30     # как часто показывать «сообщение удалено по правилам» (не спамить уведомлениями)
+FAQ_COOLDOWN = 60     # пауза между автоответами FAQ в одном чате
 _cache: dict[int, tuple[float, dict]] = {}
 _notices: dict[tuple[int, int], float] = {}
 _faq_last: dict[tuple[int, int], float] = {}

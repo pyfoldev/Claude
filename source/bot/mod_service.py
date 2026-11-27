@@ -123,6 +123,9 @@ async def can_act(bot, chat_id: int, actor_id: int, target_id: int | None, right
     return True, ""
 
 
+# ГЛАВНАЯ проверка прав. Использование в хендлере:
+#     if await ms.effective_rank(bot, db, chat_id, user_id) < 1: return     # нужен модератор и выше
+# Возвращает 0 при любой ошибке (безопаснее отказать).
 async def effective_rank(bot, db: Database, chat_id: int, user_id: int) -> int:
     """Выше из: выданный ранг и ранг по статусу в Telegram (создатель 5, админ с правом ограничивать 3)."""
     from bot.ranks import tg_rank
@@ -210,6 +213,8 @@ def _remember_avatar_later(bot, db: Database, user_id: int) -> None:
     t.add_done_callback(_avatar_tasks.discard)
 
 
+# Исполняет команду модерации (бан/мут/варн/…): проверки прав, Telegram API, запись в журнал, ответ в чат.
+# Вызывается из handlers/moderation.py. Новое наказание — добавлять сюда и в parsing.py (разбор команды).
 async def apply(bot, db: Database, cmd: ModCommand, chat_id: int, actor_id: int,
                 target_id: int, now: int, gif: bool = True) -> str:
     who = await mention(bot, db, chat_id, target_id)
@@ -297,6 +302,7 @@ async def apply(bot, db: Database, cmd: ModCommand, chat_id: int, actor_id: int,
     return text
 
 
+# Автонаказание от защиты/триггеров (action: warn | mute | kick | ban). Возвращает текст для уведомления.
 async def punish(bot, db: Database, chat_id: int, user_id: int, action: str, reason: str, now: int) -> str:
     """Наказание от имени бота (антиспам/18+): delete — только уведомление, warn — варн, mute — мут на 1 час."""
     if action in ("warn", "mute"):

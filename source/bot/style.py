@@ -5,6 +5,8 @@ from __future__ import annotations
 import html
 
 
+# ВСЕ тексты бота лучше собирать этими функциями — единый вид. Пример:
+#     style.head("🎲", "Игра", "подсказка") + "\n" + style.kv("Ставка", 50) + "\n" + style.ok("Готово")
 def head(icon: str, title: str, hint: str | None = None) -> str:
     """🛡 <b>Заголовок</b> + (необязательно) короткая строка пояснения курсивом."""
     return f"{icon} <b>{title}</b>" + (f"\n<i>{hint}</i>" if hint else "")

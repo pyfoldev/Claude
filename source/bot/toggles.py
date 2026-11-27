@@ -11,6 +11,9 @@ from aiogram.types import Message
 from bot.db import Database
 
 # ключ настройки -> подпись (порядок = порядок в меню настроек)
+# ВКЛЮЧАТЕЛИ ГРУПП КОМАНД. Новая группа, которую админ может выключить:
+#   1) добавьте "ключ_on": "подпись" сюда;  2) заведите "ключ_on": 1 в DEFAULT_SETTINGS (db.py);
+#   3) в вашем handlers/xxx.py: router.message.filter(Enabled("ключ_on"))   (см. templates/toggle_group_template.py)
 GROUPS = {
     "mod_on": "Модерация: бан, мут, кик, варн, чистка, откат, ранги, история, массовый кик",
     "svc_on": "Сервисы: калк, курс, крипто, вики, факт, маршрут, гороскоп",
@@ -27,6 +30,7 @@ GROUPS = {
 }
 
 
+# Фильтр роутера: «группа команд включена в этом чате?» (в личке — всегда да)
 class Enabled(Filter):
     def __init__(self, key: str):
         if key not in GROUPS:
@@ -39,5 +43,6 @@ class Enabled(Filter):
         return bool((await db.get_settings(message.chat.id))[self.key])
 
 
+# То же самое для обычного кода: if await enabled(db, chat_id, "mod_on"): ...
 async def enabled(db: Database, chat_id: int, key: str) -> bool:
     return bool((await db.get_settings(chat_id))[key])

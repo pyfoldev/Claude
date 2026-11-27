@@ -11,7 +11,8 @@ from bot.rp_data import catalog, is_adult, parse_rp
 from bot.targets import mention, resolve_user
 
 router = Router(name="rp")
-COOLDOWN = 2
+COOLDOWN = 2          # пауза между РП-действиями одного человека, сек
+# Список самих действий и их текстов — bot/rp_data.py (там же как добавить новое действие)
 _last: dict[tuple[int, int], float] = {}
 
 
@@ -20,6 +21,8 @@ def _in_group(m: Message) -> bool:
 
 
 @router.message(F.text.func(lambda t: parse_rp(t) is not None))
+# РП-ХЕНДЛЕР: «обнять @ник» / ответом. Порядок проверок: группа и настройка rp_on → цель → 18+ → пол → кулдаун → ответ с гифкой.
+# Тексты и список действий НЕ здесь, а в rp_data.py.
 async def rp_cmd(message: Message, bot, db: Database, http=None) -> None:
     if not _in_group(message) or not (await db.get_settings(message.chat.id))["rp_on"]:
         return

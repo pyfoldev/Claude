@@ -1,5 +1,7 @@
 # Как расширять и редактировать бота
 
+> Подробные гайды — в [docs/](docs/README.md); шаблоны — в [templates/](templates/README.md); генератор модулей — `python tools/new_handler.py`.
+
 Карта проекта (`source/bot/`):
 
 | Что | Где |

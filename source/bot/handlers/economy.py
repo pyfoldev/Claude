@@ -15,15 +15,19 @@ from bot.targets import mention, resolve_user
 
 router = Router(name="economy")
 _rng = random.Random()
-FARM_COOLDOWN = 4 * 3600
-FARM_AMOUNT = 40
-ROULETTE_COOLDOWN = 60
-ROULETTE_REWARD = 20
-ROULETTE_PENALTY = 50
-ROULETTE_MUTE = 600
-DICE_TTL = 120
-MAX_STAKE = 100_000
-_T = r"(@\w+|\d{5,})"
+
+# ===== БАЛАНС ИГРЫ (меняйте числа здесь) =====
+FARM_COOLDOWN = 4 * 3600   # «ферма» раз в 4 часа
+FARM_AMOUNT = 40           # сколько монет приносит ферма
+ROULETTE_COOLDOWN = 60     # пауза между «рулетками», сек
+ROULETTE_REWARD = 20       # награда за выживание
+ROULETTE_PENALTY = 50      # штраф при «выстреле»
+ROULETTE_MUTE = 600        # мут при проигрыше, сек
+DICE_TTL = 120             # сколько действует вызов «кубы», сек
+MAX_STAKE = 100_000        # максимальная ставка
+_T = r"(@\w+|\d{5,})"   # «цель»: @ник или числовой id
+# ТАБЛИЦА КОМАНД: (вид, регулярка). Новая команда: добавьте строку сюда и ветку `elif kind == "...":` в economy_cmd.
+# Группы регулярки () попадают в g[0], g[1]… в обработчике.
 _PATTERNS = [
     ("farm", r"^ферма$"),
     ("transfer", r"^передать\s+(\d{1,9})(?:\s+" + _T + ")?$"),
@@ -32,7 +36,7 @@ _PATTERNS = [
     ("dice_target_first", r"^кубы\s+" + _T + r"\s+(\d{1,6})$"),
 ]
 _COMPILED = [(k, re.compile(p, re.IGNORECASE)) for k, p in _PATTERNS]
-_cool: dict[tuple, float] = {}
+_cool: dict[tuple, float] = {}   # кулдауны: (вид, чат, пользователь) -> время; чистится в main.rollup_loop
 _dice: dict[str, dict] = {}
 
 
@@ -56,6 +60,7 @@ def _pair_win_allowed(chat: int, a: int, b: int, now: float | None = None) -> bo
     return True
 
 
+# Разбор текста в (вид_команды, группы) или None, если это не команда
 def parse(text: str | None):
     t = re.sub(r"\s+", " ", (text or "").strip())
     for kind, rx in _COMPILED:
@@ -73,11 +78,13 @@ def _fmt_wait(sec: int) -> str:
     return f"{h} ч {m} мин" if h else f"{max(m, 1)} мин"
 
 
+# Группа «игры» включена в настройках чата (games_on)? В личке команды не работают
 async def _enabled(db: Database, m: Message) -> bool:
     return m.chat.type in ("group", "supergroup") and bool((await db.get_settings(m.chat.id))["games_on"])
 
 
 @router.message(F.text.func(lambda t: parse(t) is not None))
+# ЕДИНЫЙ ХЕНДЛЕР всех команд экономики: разбор → проверка настройки → ветка по виду команды (farm/transfer/roulette/dice)
 async def economy_cmd(message: Message, bot, db: Database) -> None:
     if not await _enabled(db, message):
         return

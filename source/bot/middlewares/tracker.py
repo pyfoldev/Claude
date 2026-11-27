@@ -11,6 +11,15 @@ from bot.bulk import fulfil_pending
 from bot.db import Database
 
 
+# ┌─ ТРЕКЕР ПОЛЬЗОВАТЕЛЕЙ ─────────────────────────────────────────────────────────────────────────────┐
+# │ Зачем: бот запоминает КАЖДОГО увиденного человека (id ↔ @ник ↔ имя), чтобы работали «бан @ник», «брак @ник».│
+# │ Устройство файла (сверху вниз):                                                                          │
+# │   _from_message / extract_users   — вытащить из апдейта всех упомянутых пользователей                  │
+# │   extract_memberships             — кто пришёл / ушёл / был в чате (kind: seen | joined | left)         │
+# │   extract_chats                   — какие чаты увидели (и активен ли в них бот)                         │
+# │   UserTrackerMiddleware           — сам middleware: пишет в БД (с троттлингом, чтобы не нагружать её)    │
+# │ Редактировать: новый источник пользователей (новое поле апдейта) — допишите в extract_users.            │
+# └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 def _from_message(m: Message | None, out: list[User]) -> None:
     if m is None:
         return
@@ -48,6 +57,7 @@ def _from_message(m: Message | None, out: list[User]) -> None:
         _from_message(pinned, out)
 
 
+# Собирает ВСЕХ пользователей из апдейта (автор, упомянутые, пересланные, вошедшие…), без дублей по id
 def extract_users(update: Update) -> list[User]:
     out: list[User] = []
     for m in (update.message, update.edited_message, getattr(update, "business_message", None)):
@@ -75,7 +85,9 @@ def extract_users(update: Update) -> list[User]:
     return list({u.id: u for u in out}.values())
 
 
+# Типы чатов, которые считаем «группой»
 _GROUPS = ("group", "supergroup")
+# Служебные аккаунты Telegram — их не запоминаем как людей
 SERVICE_IDS = {777000, 136817688, 1087968824}  # Telegram, Channel_Bot, GroupAnonymousBot
 
 
@@ -134,7 +146,7 @@ def extract_chats(update: Update) -> list[tuple]:
 
 
 class UserTrackerMiddleware(BaseMiddleware):
-    MEMBER_WRITE_EVERY = 60
+    MEMBER_WRITE_EVERY = 60   # как часто (сек) обновлять «был в чате» для одного человека; меньше — точнее, но больше записей в БД
     def __init__(self, db: Database):
         self.db = db
         self._chat_seen: dict[int, tuple[float, str | None]] = {}  # чтобы не писать чат в БД на каждое сообщение
@@ -142,6 +154,7 @@ class UserTrackerMiddleware(BaseMiddleware):
 
     async def __call__(self, handler, event: Update, data):
         try:
+            # 1) запоминаем людей (id, ник, имя) и язык интерфейса — для английского режима
             for u in extract_users(event):
                 if not u.is_bot and u.id not in SERVICE_IDS:
                     if u.language_code:
@@ -153,6 +166,7 @@ class UserTrackerMiddleware(BaseMiddleware):
                     if bot is not None and self.db.has_pending(u.username):   # на этот ник стоит отложенный бан
                         await fulfil_pending(bot, self.db, u.id, u.username, int(time.time()))
             now = int(time.time())
+            # 2) запоминаем чаты (раз в 5 минут или при смене названия); бот удалён из чата → помечаем неактивным
             for chat, active in extract_chats(event):
                 prev = self._chat_seen.get(chat.id)
                 if not active:
@@ -161,9 +175,11 @@ class UserTrackerMiddleware(BaseMiddleware):
                 elif prev is None or now - prev[0] > 300 or prev[1] != chat.title:
                     await self.db.upsert_chat(chat.id, chat.title, chat.type, chat.username, now)
                     self._chat_seen[chat.id] = (now, chat.title)
+            # 3) права участника могли поменяться — сбрасываем кэш админ-прав
             for ev in (event.chat_member, event.my_chat_member):
                 if ev is not None:                       # Telegram сообщил о смене статуса — сбрасываем кэш прав
                     ms.forget_member(ev.chat.id, ev.new_chat_member.user.id)
+            # 4) учёт участников: пришёл / ушёл / «был в чате» (для «кто неактив»)
             for chat_id, u, kind in extract_memberships(event):
                 if u.is_bot or u.id in SERVICE_IDS:
                     continue

@@ -34,6 +34,11 @@ async def _delete_later(bot, chat_id: int, message_id: int, delay: float) -> Non
         pass
 
 
+# ВЫБОР СПОСОБА ОТВЕТА:
+#   ux.tell(message, text)  — ответ-замечание автору команды (ошибки, кулдауны, «нет прав»);
+#   ux.tell_cb(cb, text)    — то же на нажатие inline-кнопки;
+#   ux.react(bot, chat, msg_id, "👌") — молча поставить реакцию вместо текста;
+#   message.answer / message.reply  — обычное публичное сообщение (результат, который видят все).
 async def tell(message, text: str, *, reply_markup=None, ttl: int = NOTICE_TTL):
     """Ответ, который нужен только автору команды (кулдауны, «нет прав», баланс). В группе — ephemeral-сообщение
     (видит один человек, Bot API 10.2); если не вышло — обычный ответ, который удалится сам через ttl секунд."""

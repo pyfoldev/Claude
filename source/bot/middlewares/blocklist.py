@@ -9,6 +9,7 @@ from aiogram.types import Update
 from bot.runtime import Runtime
 
 
+# Достаёт (id отправителя, id чата) из апдейта любого вида; новый вид апдейта с чатом — добавьте ветку сюда
 def sender_and_chat(update: Update) -> tuple[int | None, int | None]:
     if update.message or update.edited_message:
         m = update.message or update.edited_message
@@ -24,6 +25,14 @@ def sender_and_chat(update: Update) -> tuple[int | None, int | None]:
     return None, None
 
 
+# ┌─ БЛОК-ЛИСТ И РЕЖИМ ОБСЛУЖИВАНИЯ ─────────────────────────────────────────────┐
+# │ Подключён самым ПЕРВЫМ (после метрик). Порядок проверок:                      │
+# │   1. владелец бота → пропускаем всегда;                                       │
+# │   2. чат в блок-листе → бот выходит из него (один раз) и всё игнорирует;      │
+# │   3. пользователь в блок-листе ИЛИ режим обслуживания → игнорируем команды,   │
+# │      но защита чата (guard) и вход новичков (капча/антирейд) продолжают работать.│
+# │ Данные берутся из Runtime (runtime.py): rt.banned_users / banned_chats / maintenance. │
+# └────────────────────────────────────────────────────────────────────────────────┘
 class BlockMiddleware(BaseMiddleware):
     def __init__(self, rt: Runtime, owner_ids, guard=None):
         self.rt = rt

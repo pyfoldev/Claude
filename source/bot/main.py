@@ -347,9 +347,9 @@ async def main() -> bool:
             fun_handlers.router,
             services_handlers.router,
             fun.router,
+            # >>> СЮДА добавляйте свой роутер: xxx_handlers.router, (строго выше блока ИИ!) <<<
             # --- ИИ — ПОСЛЕДНИМ (ловит «ии, …» и обращения по имени) ---
             ai_handlers.router,
-            # >>> СЮДА добавляйте свой роутер: xxx_handlers.router, (выше ai_handlers!) <<<
         ]
         for r in ROUTERS:
             dp.include_router(r)

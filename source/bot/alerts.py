@@ -48,6 +48,7 @@ def make_error_handler(alerter: Alerter):
     return on_error
 
 
+# Обёртка фоновых задач из main.py (jobs): запускает, при падении логирует, шлёт алерт владельцам и перезапускает с паузой.
 async def supervise(name: str, factory: Callable[[], Awaitable[None]], alerter: Alerter,
                     backoff: float = 5.0) -> None:
     """Запускает фоновую задачу заново после падения и сообщает владельцу."""

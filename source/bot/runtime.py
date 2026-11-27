@@ -9,6 +9,11 @@ from bot.db import GLOBAL_DEFAULTS, Database
 __all__ = ["Runtime", "GLOBAL_DEFAULTS"]
 
 
+# Runtime — «общая доска» работающего бота. Лежит в dp["rt"] → в хендлере параметр `rt`.
+#   rt.flags["ai"|"stt"|"nsfw"|"aimod"] — глобальные выключатели функций (панель владельца)
+#   rt.maintenance — режим обслуживания;   rt.banned_users / banned_chats — блок-лист
+#   rt.request_stop(restart=True) — штатная остановка/перезапуск (кнопки владельца)
+# Новый глобальный флаг: добавьте в GLOBAL_DEFAULTS (db.py), в apply_globals и в self.flags.
 class Runtime:
     def __init__(self) -> None:
         self.started_at = time.time()

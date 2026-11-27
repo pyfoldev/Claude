@@ -9,20 +9,21 @@ from collections import deque
 from aiogram import BaseMiddleware
 from aiogram.types import Message
 
-PER_SEC = 4
-PER_MIN = 70
-BLOCK = 3600
-MAX_HOURS = 50
-FORGET = 24 * 3600
+# ===== ЛИМИТЫ (меняйте числа здесь) =====
+PER_SEC = 4          # макс. команд в секунду от одного человека
+PER_MIN = 70         # макс. команд в минуту
+BLOCK = 3600         # базовая пауза при нарушении, сек (1 час)
+MAX_HOURS = 50       # потолок: повторные нарушения удлиняют паузу до 50 часов
+FORGET = 24 * 3600   # через сколько «прощаем» прошлые нарушения
 
 
 class RateLimitMiddleware(BaseMiddleware):
     def __init__(self, owner_ids=(), clock=time.time):
         self.owners = set(owner_ids)
         self.clock = clock
-        self._hits: dict[int, deque] = {}
+        self._hits: dict[int, deque] = {}                  # user_id -> времена последних команд
         self._until: dict[int, float] = {}
-        self._strikes: dict[int, tuple[int, float]] = {}
+        self._strikes: dict[int, tuple[int, float]] = {}  # user_id -> (сколько раз нарушал, когда в последний раз)
 
     def check(self, user_id: int) -> str:
         """'ok' | 'blocked' (уже в паузе) | 'new' (пауза только что началась)."""
@@ -51,6 +52,8 @@ class RateLimitMiddleware(BaseMiddleware):
     async def __call__(self, handler, m: Message, data):
         u = m.from_user
         text = m.text or ""
+        # считаем только сообщения-команды с префиксом; разговор и владельцы не ограничиваются
+        # (другие префиксы команд — добавьте символ в кортеж)
         if u is None or u.is_bot or u.id in self.owners or not text[:1] in ("/", "!", "."):
             return await handler(m, data)
         state = self.check(u.id)

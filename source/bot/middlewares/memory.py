@@ -14,6 +14,11 @@ def reply_uid(event: Message, bot_id: int | None) -> int | None:
     return BOT_UID if bot_id is not None and r.from_user.id == bot_id else r.from_user.id
 
 
+# ┌─ ПАМЯТЬ ЧАТА для «живого» общения ИИ ────────────────────────────────────────┐
+# │ Складывает последние сообщения в MEMORY (bot/chatmind.py) — только если в чате │
+# │ настройка ai_chat != "off". Стоит ПОСЛЕ защиты: удалённый спам сюда не попадает.│
+# │ Команды («/…») не запоминаются. Лимиты памяти — в chatmind.py.                  │
+# └────────────────────────────────────────────────────────────────────────────────┘
 class ChatMemoryMiddleware(BaseMiddleware):
     def __init__(self, db: Database):
         self.db = db

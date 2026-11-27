@@ -43,6 +43,10 @@ def ping(user_id: int, name: str) -> Html:
     return Html(f'<a href="tg://user?id={user_id}">{html.escape(name or f"id{user_id}")}</a>')
 
 
+# ГЛАВНЫЙ помощник «кто цель команды». Используйте в любой команде с @ником / ответом на сообщение:
+#     target = await resolve_user(db, token, real_reply(message))   # token — '@ник' | '12345' | None
+#     if target is None: return          # цель не найдена — это просто фраза, а не команда
+#     uid, name = target
 async def resolve_user(db: Database, token: str | None, reply_message) -> tuple[int, str] | None:
     """(id, имя) или None, если цель определить не удалось. reply_message — уже очищенный от сервисных ответов."""
     if token:
