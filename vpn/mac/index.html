@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;overflow:hidden;user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#flag{position:fixed;top:0;left:0;right:0;height:400px}
+#flag::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.25) 0,rgba(0,0,0,.25) 55%,#000 100%)}
+#flag{background:linear-gradient(to bottom,rgba(174,28,40,.62) 0 33.33%,rgba(255,255,255,.34) 33.33% 66.66%,rgba(33,70,139,.66) 66.66% 100%)}
+main{position:relative;padding:56px 24px 24px}
+.top{display:flex;align-items:center;justify-content:space-between}
+.pill{border:1px solid rgba(255,255,255,.4);border-radius:50px;padding:7px 16px;font-size:14px;font-weight:500}
+#pw{width:68px;height:68px;border-radius:50%;background:#1a1a1a;border:1px solid rgba(255,255,255,.33);display:grid;place-items:center;cursor:pointer;transition:background .2s}
+#pw.up{background:#fff}#pw.up svg{stroke:#000}#pw svg{stroke:#fff}
+#pw.busy{opacity:.6;pointer-events:none}
+h1{font-size:40px;font-weight:600;margin-top:36px}
+#ip{margin-top:6px;font-size:16px;color:#bdbdbd}#ip.err{color:#e5656f}
+.row{margin-top:40px;display:flex;align-items:center;gap:16px;padding:14px 16px;border-radius:18px;background:rgba(14,14,14,.8);border:1px solid rgba(255,255,255,.13);cursor:pointer;font-size:20px}
+.row span{flex:1}.row i{color:#8a8a8a;font-style:normal;font-size:26px}
+.nl{width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.27);background:linear-gradient(#ae1c28 0 33.3%,#fff 33.3% 66.6%,#21468b 66.6%)}
+#dlg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);place-items:center;padding:24px}
+#dlg.on{display:grid}
+.box{background:#111;border-radius:18px;padding:20px;width:100%}
+.box h2{font-size:18px;font-weight:500;margin-bottom:12px}
+textarea{width:100%;height:150px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;padding:10px;font:12px ui-monospace,monospace;resize:none;user-select:text}
+.btns{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;align-items:center}
+button{background:none;border:0;color:#fff;font-size:14px;cursor:pointer;padding:8px 10px}
+button.p{background:#fff;color:#000;border-radius:10px;padding:8px 16px}
+#e{color:#e5656f;font-size:12px;margin-top:8px;min-height:14px}
+.drag{position:fixed;top:0;left:0;right:0;height:36px;-webkit-app-region:drag}
+</style></head><body>
+<canvas id="bg"></canvas><div id="flag"></div><div class="drag"></div>
+<main>
+ <div class="top"><div class="pill" id="st">OFF</div>
+  <div id="pw"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke-width="3.5" stroke-linecap="round"><path d="M8 6.5a10 10 0 1 0 12 0"/><path d="M14 2v11"/></svg></div></div>
+ <h1>Amsterdam</h1><div id="ip">—</div>
+ <div class="row" id="srv"><div class="nl"></div><span>Amsterdam</span><i>›</i></div>
+</main>
+<div id="dlg"><div class="box"><h2>Сервер</h2><textarea id="t" placeholder="vpn://…"></textarea><div id="e"></div>
+ <div class="btns"><button id="paste">Вставить</button><button id="cancel" style="color:#8a8a8a">Отмена</button><button class="p" id="save">Сохранить</button></div></div></div>
+<script>
+const $=id=>document.getElementById(id);
+let up=false,busy=false,level=0;
+function render(ep){ $('st').textContent=up?'ON':'OFF'; $('pw').classList.toggle('up',up); $('pw').classList.toggle('busy',busy);
+  if(ep!==undefined && !$('ip').classList.contains('err')) $('ip').textContent=ep||'—'; level=up?.25:0; }
+let ep=null;
+function err(m){ $('ip').textContent=m; $('ip').classList.add('err'); setTimeout(()=>{$('ip').classList.remove('err');$('ip').textContent=ep||'—'},5000); }
+veil.state().then(s=>{up=s.up;ep=s.endpoint;render(ep)});
+$('pw').onclick=async()=>{ if(!ep){$('dlg').classList.add('on');return}
+  busy=true;render(ep); try{up=await veil.toggle()}catch(e){err(String(e.message||e).replace(/^Error invoking remote method 'toggle': Error: /,''))} busy=false;render(ep)};
+$('srv').onclick=()=>$('dlg').classList.add('on');
+$('cancel').onclick=()=>$('dlg').classList.remove('on');
+$('paste').onclick=async()=>{try{$('t').value=await navigator.clipboard.readText()}catch{}};
+$('save').onclick=async()=>{try{ep=await veil.save($('t').value);$('dlg').classList.remove('on');$('e').textContent='';$('ip').textContent=ep;render(ep)}catch(e){$('e').textContent='Неверная конфигурация'}};
+
+// Фон: сетка точек с волнами и мягким свечением по краям (порт Backdrop)
+const cv=$('bg'),g=cv.getContext('2d');let W,H,D=devicePixelRatio||1,lv=0;
+function size(){W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D}addEventListener('resize',size);size();
+function frame(time){
+  g.setTransform(D,0,0,D,0,0);g.fillStyle='#000';g.fillRect(0,0,W,H);
+  lv+=(level-lv)*.35;const step=13,rowH=step*.866,ox=W/2,oy=H*.42,maxD=Math.hypot(W,H)*.62;
+  const amp=.10+1.5*lv,speed=.00022+.0006*lv,pos=[0,1,2].map(k=>((time*speed+k/3)%1));
+  const b=[[],[],[],[],[],[]];let row=0;
+  for(let y=rowH/2;y<H;y+=rowH,row++){const ty=y/H,edge=Math.max(1-ty*5,0)*.5,base=.13+.2*ty*ty*ty+edge*.12;
+    for(let x=row%2?step:step/2;x<W;x+=step){const sh=.72+.28*Math.sin(time*.0014+x*.013+y*.009),d=Math.hypot(x-ox,y-oy)/maxD;
+      let wv=0;for(let k=0;k<3;k++){const e=d-pos[k];wv+=Math.exp(-(e*e)/.006)}
+      const a=Math.min(Math.max(base*sh+amp*wv*.42,0),.9);b[Math.min(5,Math.max(0,Math.floor(a/.9*5.99)))].push(x,y)}}
+  for(let i=0;i<6;i++){if(!b[i].length)continue;g.fillStyle=`rgba(255,255,255,${Math.min(.1+.9*(i+.5)/6*.9,.92)})`;
+    const r=(1.3+.45*i)/2;g.beginPath();for(let j=0;j<b[i].length;j+=2){g.moveTo(b[i][j]+r,b[i][j+1]);g.arc(b[i][j],b[i][j+1],r,0,6.283)}g.fill()}
+  const gm=1+2.4*lv+.12*Math.sin(time*.002),gw=74*(1+.7*lv),gh=90*(1+.6*lv);
+  const grad=(x0,y0,x1,y1,a)=>{const q=g.createLinearGradient(x0,y0,x1,y1);[[0,1],[.18,.55],[.42,.2],[.72,.05],[1,0]].forEach(([s,k])=>q.addColorStop(s,`rgba(255,255,255,${Math.min(a*k,.8)})`));return q};
+  g.fillStyle=grad(0,0,gw,0,.13*gm);g.fillRect(0,0,gw,H);
+  g.fillStyle=grad(W,0,W-gw,0,.13*gm);g.fillRect(W-gw,0,gw,H);
+  g.fillStyle=grad(0,0,0,gh,.11*gm);g.fillRect(0,0,W,gh);
+  g.fillStyle=grad(0,H,0,H-gh,.16*gm);g.fillRect(0,H-gh,W,gh);
+  setTimeout(()=>requestAnimationFrame(frame),level>.03?33:66)}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,16 @@
+{
+  "name": "veil-vpn",
+  "productName": "Veil",
+  "version": "1.0.0",
+  "description": "Veil VPN",
+  "main": "main.js",
+  "author": "Veil",
+  "scripts": { "start": "electron .", "dist": "electron-builder --mac zip --arm64 --x64 -c.mac.identity=null" },
+  "devDependencies": { "electron": "31.7.7", "electron-builder": "24.13.3" },
+  "build": {
+    "appId": "app.veil.vpn",
+    "productName": "Veil",
+    "files": ["main.js", "preload.js", "index.html"],
+    "mac": { "category": "public.app-category.utilities", "target": ["zip"] }
+  }
+}
